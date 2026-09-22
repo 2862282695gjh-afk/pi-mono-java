@@ -1,10 +1,10 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.12.1
+> 文档版本：1.13.0
 >
-> 状态：Implemented
+> 状态：工具注册与调用已实现；定义文件自动生成与同步待实现
 >
-> 日期：2026-09-19
+> 日期：2026-09-22
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
@@ -20,9 +20,16 @@
 ## 1. 结论与源码基线
 
 CampusClaw 产品运行面通过固定枚举公开 PascalCase 内置工具：`Read`、`Find`、`Grep`、`Ls`、
-`Cron`、`ListMateTools`、`CallMateTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron 和 Child Agent 通过同一个
+`Cron`、`Skill`、`CallTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron 和 Child Agent 通过同一个
 `AgentSessionFactory` 创建相同类型、相同工具 Pipeline 和相同 hook/error/cancellation 语义的
 Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 Execution 上下文彼此隔离。
+框架工具之外，初始集合还包含 Agent 直接关联业务工具的代理；仅由 Skill 关联的业务工具按需
+读取定义文件并通过 `CallTool` 执行。
+
+注册与调用核验源码为 `c2b41723702cedfe167ec2cda68c6db65c39b0fa`，设计依据为
+`pi-mono-java-design@879746e59189a07335e32c7df807c7f5048fdc28`。本文件同次提交修复
+Skill 正文调用时读取和 Schema 异常诊断；其余专题的历史基线不因此升级。定义文件的自动生成、
+数据同步、刷新及版本一致性待实现。精确职责和调用规则见 [Mate 工具设计](mate-tool-client.md)。
 
 计划工具实现核验提交为 `17dbb20ae998c58c2b3f5ae19c254922e9f93210`，变更前基线为
 `29ebec6a8cad99896414211cda28c6fffec71bee`；新增工具、
@@ -67,7 +74,9 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/ReadOperations.java`、
   `LocalReadOperations.java`：仅保留文件字节读取和存在性能力；
 - `modules/coding-agent-cli/pom.xml`、`pom.xml`：删除 Read 图片解码所需的 WebP 依赖；
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java`：Session 缓存及 single-flight；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolResolver.java`：Session 内分别解析 Agent 与直接 Skill 工具关联；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolExecutor.java`：代理与 CallTool 共用的业务 Schema 校验及单次执行；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/skill/SkillTool.java`：调用时读取正文、抽样列出资源，不注册 Skill 工具代理；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java`、
   `runtimeapi/event/RuntimeEventService.java`、`session/ManagedAgentSessionRequest.java`：Mate 凭据的执行期间内存传递；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/agent/SubagentExecutionService.java`：Child Execution；
@@ -86,13 +95,13 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 
 | 主题 | 基线源码观察 | 本次实现 | 分类与原因 |
 |---|---|---|---|
-| 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 关闭枚举 + 严格 profile + 工厂装配 | 架构改造：模型契约必须可审计且不受 classpath 漂移影响 |
+| 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 框架枚举 + 入口配置 + Agent 直接工具代理；Skill 文件按需披露 | 架构改造：工具集合有明确来源，Skill Schema 不一次性占用上下文 |
 | 本地文件 | Read/Grep/Ls 可接收进程可见路径，Find 对应旧 Glob | 四工具统一限制到 `agent/{agentId}`，拒绝符号链接和 realpath 越界 | 安全加固：防止跨 Agent 读取 |
 | Read 内容 | 收敛前按 MIME 解码 JPEG/PNG/GIF/WebP/BMP，必要时缩放并输出 `ImageContent` | 仅接受严格 UTF-8 文本并输出 `TextContent`；图片以及含 NUL 或非法 UTF-8 的二进制内容失败 | 产品约束：Read 不再向模型提供本地图片读取入口 |
 | Read 行边界 | 修复前的 `selectLines` 使用 `split("\n", -1)` 的数组长度判断总行数和剩余行，末尾 LF 会产生一个虚构空行 | 空文件按 0 行处理；末尾 LF 只终止最后一行，选择到文件末尾时仍原样保留该 LF | 实现缺陷修复：对齐既有 1-based `offset`/`limit` 契约，不改变产品或架构边界 |
 | gitignore 根锚定 | 解析器保留前导 `/` 的锚定标志，但去掉斜杠后的无分隔符 glob 仍进入 basename 任意深度匹配器，导致 `/dist` 错误忽略 `src/dist` | 锚定规则和含路径分隔符规则使用相对当前 `.gitignore` 目录根开始的 glob；普通无斜杠规则仍匹配任意目录层级 | 实现缺陷修复：恢复既有 Git ignore 根锚定语义，不改变产品、安全或架构边界 |
-| Mate 调用 | List 接受 Agent/Skill ID；Call 依赖预先 List 的缓存 | List 只接受可选 `skillName`；Call 按名称，miss 自动完整发现 | 产品约束：模型不感知内部 ID 或调用来源 |
-| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | Runtime 读取四项可选值并在本次 Agent 执行和 Child 调用期间由内存对象持有；List 与 Call miss 的发现请求不携带，只有 Call execute 原值携带非空项；空或部分凭据仍调用 Mate 一次 | 架构改造与安全加固：Claw 不解释 Mate 凭据组合，由 Mate 在真实 execute 时判定，同时限制凭据生命周期和外发范围 |
+| Mate 调用 | 批量 List 向模型返回全部工具定义 | Agent 代理与 CallTool 共用执行器，按各自可信关联范围解析 | 架构改造：统一执行而不混淆工具发现与授权，模型不提交内部 ID |
+| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | Runtime 读取四项可选值并在本次 Agent 执行和 Child 调用期间由内存对象持有；Agent/Skill 元数据查询不携带，只有实际 execute 原值携带非空项；空或部分凭据仍调用 Mate 一次 | 架构改造与安全加固：Claw 不解释 Mate 凭据组合，由 Mate 在真实 execute 时判定，同时限制凭据生命周期和外发范围 |
 | Child | `spawn_agent`、`invoke_agent`、ACP/HTTP/A2A 与独立 runner 并存 | `Agent({agentName,task})` 只解析直接绑定，并通过公共 SessionFactory 执行 | 架构改造：统一父子执行语义并删除后端身份概念 |
 | Cron | payload 固化 model/system/tools，并由旧本地 Session 执行 | Job 只保存 agentId/prompt，触发时 prepare 并使用 cron profile | 架构改造：配置随 Agent 当前绑定生效 |
 | CLI | 服务入口可分发到 CLI/TUI，Loop 属于 CLI Session | 产品只保留服务入口；无 CLI profile、Loop 或 `/reload` | 产品约束：CampusClaw 是 ToB 服务 |
@@ -104,24 +113,25 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 
 ![工具系统总体架构](tool-system-v2/tool_system_architecture.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L1)
+[PlantUML 源码](tool-system-v2/diagram.puml#L1) · [原尺寸](tool-system-v2/tool_system_architecture.svg)
 
 `AgentSessionFactory` 是 Runtime HTTP、Cron trigger 和 Child Execution 唯一公共装配点。
 Host 决定持久化与生命周期；Session 只拥有 Agent、消息、工具实例、hook、取消域和 Session
 级缓存。应用级 `ReadOperations`、`MateToolClient`、`CronService` 等依赖可以共享，但任何
 `AgentTool` 实例均不得跨 Session 复用。
 
-## 4. 关闭工具集合和入口配置
+## 4. 工具集合与入口配置
 
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
-    cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
-    child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
+    runtime: [Read, Find, Grep, Ls, Cron, Skill, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
+    cron: [Read, Find, Grep, Ls, Skill, CallTool, Agent]
+    child-agent: [Read, Find, Grep, Ls, Skill, CallTool]
 ```
 
-配置列表完全替换缺省值；显式空数组表示该入口没有工具。名称大小写敏感，未知名称、重复
+配置列表只选择框架工具并完全替换框架缺省值；非空时追加 Agent 直接关联业务工具的代理。
+显式空数组表示该入口没有任何工具，也不追加业务代理。名称大小写敏感，未知名称、重复
 名称以及旧名称均使启动失败。`ToolEntryPoint` 只有 `RUNTIME`、`CRON`、`CHILD_AGENT`。
 
 | 工具 | Runtime | Cron | Child | 模式 |
@@ -131,8 +141,8 @@ campusclaw:
 | `Grep` | ✓ | ✓ | ✓ | PARALLEL |
 | `Ls` | ✓ | ✓ | ✓ | PARALLEL |
 | `Cron` | ✓ |  |  | SEQUENTIAL |
-| `ListMateTools` | ✓ | ✓ | ✓ | PARALLEL |
-| `CallMateTool` | ✓ | ✓ | ✓ | SEQUENTIAL |
+| `Skill` | ✓ | ✓ | ✓ | PARALLEL |
+| `CallTool` | ✓ | ✓ | ✓ | SEQUENTIAL |
 | `Agent` | ✓ | ✓ |  | SEQUENTIAL |
 | `ExitPlanMode` | ✓ |  |  | SEQUENTIAL |
 | `TodoUpdate` | ✓ |  |  | SEQUENTIAL |
@@ -150,7 +160,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L89)
+[PlantUML 源码](tool-system-v2/diagram.puml#L96) · [原尺寸](tool-system-v2/agent_workspace_boundary.svg)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -204,8 +214,8 @@ agent/{agentId}/.campusclaw/
 
 `prepare(agentId)` 完整缓存命中时不访问 Mate；缓存缺失或不完整时在同级 staging 目录生成、
 完整校验后原子发布。管理面 `refresh(agentId)` 总是重新拉取，失败时保留旧目录。目录中的
-Agent/Skill 名称必须和文件路径精确一致且大小写折叠后唯一；任何 `tools.json` 或符号链接都
-使缓存无效。HTTP Session 创建、Cron 触发和 Child 执行都会先 prepare；工具配置不热更新。
+Agent/Skill 名称必须和文件路径精确一致且大小写折叠后唯一；旧集中式 `tools.json` 或符号链接使缓存无效；Skill 工具定义目标位置为
+`references/<toolName>.json`，自动生成和同步待实现。HTTP Session 创建、Cron 触发和 Child 执行都会先 prepare；工具配置不热更新。
 
 Agent.mode 缺省为 build，仅在新建交互 Session 时复制。已有会话模式由 Session 维护；
 Child 在实际调用时继承父模式，Cron 维持既有提示词策略。
@@ -215,48 +225,24 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 `session.model.changed` 及必要的 `session.thinking.changed`。没有可用 default 时，本次请求在
 写入 `user.message` 前失败。
 
-## 7. Mate 实时发现与名称调用
+## 7. Skill 渐进发现与业务调用
 
-![CallMateTool 缓存未命中流程](tool-system-v2/mate_call_refresh.svg)
+1. 初始模型集合包含配置的框架工具和 Agent 直接关联业务工具的代理；提示词只列可见 Skill 的名称与描述。
+2. 模型按任务调用 `Skill({name})`，取得受管正文、基础目录和抽样资源路径；正文文件在调用时读取，文件不可读返回错误。
+3. 模型按需用普通 `Read` 读取 Skill 目录的工具定义，再调用 `CallTool({tool,args?})`；读取不追加模型工具，也不授予调用权限。
+4. Host 按真实入口检查可信关联权限，代理与 CallTool 共用 `MateToolExecutor` 校验并执行；实际 HTTP 调用不自动重放。
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L120)
+精确契约、当前 Session 解析缓存和待实现的数据同步边界由 [Mate 工具设计](mate-tool-client.md) 维护。
+不再注册 `ListMateTools` 或 `CallMateTool`，前端仅为历史记录保留旧调用名的展示兼容。
 
 ![Mate 工具执行级凭据链](tool-system-v2/mate_credential_flow.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L40)
+[PlantUML 源码](tool-system-v2/diagram.puml#L46) · [原尺寸](tool-system-v2/mate_credential_flow.svg)
 
-`ListMateTools({skillName?})` 无参数查询当前 Agent；有名称时通过已准备目录映射到 Skill ID。
-每次都实时访问 Mate，输出稳定 JSON，仅含 `scope` 和各工具的 `name`、`description`、
-`inputSchema`。内部客户端分为 `listAgentTools(agentId)` 和 `listSkillTools(skillId)`，按 ID
-关联批量元数据并恢复 Mate 绑定顺序；发现方法没有执行凭据参数。
-
-`CallMateTool({tool,args?})` 只按名称调用。缓存是 Session 私有的完整“名称 → ID”快照：
-
-- 命中时只执行一次 Mate 工具；
-- miss 时 single-flight 发现当前 Agent 和所有直接 Skill 的完整集合；
-- 同名同 ID 合并，同名不同 ID 原子失败；
-- 发现成功后替换完整快照，再解析名称；
-- 自动流程只重试发现，绝不重放已发出的 execute。
-
-并发 miss 共享同一轮成功或失败结果。List 只更新被查询来源的最近成功缓存，不清空其他
-来源。Runtime Events 和 Command 入口读取可选的 `X-HW-ID`、`X-HW-APPKEY`、
-`Authorization` 和 `access-token`；
-这些值只在本次 Agent 执行及其 Child 调用期间由内存对象持有，不写入数据库、Event、Prompt、
-模型消息或日志，执行结束后 Runtime 不再主动持有。消息或命令开始执行时固定不可变快照；Child
-只读继承同一快照，停止、确认和问答等控制请求不替换它。缺少执行上下文与上下文中的空凭据
-仍是不同状态。
-
-Agent binding、Skill binding 和 tool metadata 查询不携带这些值；只有 Call 的单次 execute
-请求按原 Header 名和值携带本次快照中的非 null、非空字符串。Claw 不补值、不添加 Bearer、
-不借用其他请求凭据，也不校验最低完整性、组合或 AppKey/JWT 互斥性。工具解析、权限、确认和
-取消检查通过后，即使四项全缺也向 Mate execute 发送一次请求；Cron 的空快照遵循同一规则。
-Mate 负责最终认证、授权和参数校验。Mate 业务失败沿既有 ToolResult 错误路径返回，网络等异常
-沿既有通用工具失败路径返回；execute 均不自动重试，也不新增凭据公共错误码。上游公司认证和
-资源授权边界不变。
-
-Mate 的非零响应和畸形响应只对模型公开通用工具失败文本，避免上游正文或 `resMsg` 回显秘密。
-敏感 HTTP Header 构造异常和响应解析异常的日志保留 operation、toolId、异常类型及原始来源
-栈帧，但不记录原始异常 message、cause 或响应正文。
+Runtime Events 和 Command 入口读取四项可选执行凭据，代理和 CallTool 只在实际 execute 时
+透传当前执行快照。元数据查询不携带凭据，空或部分凭据仍交由 Mate 校验；不写入模型消息、
+目录、持久化存储或日志。Child 只读继承父执行快照，控制请求不替换原值。
+详见 [HTTP 契约与凭据链](mate-tool-client.md#4-http-契约与凭据链)。
 
 ## 8. Child Execution
 
@@ -349,8 +335,8 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 实现测试覆盖严格配置、每 Session 新工具实例、Schema-before-hook、hook 顺序、并行 barrier、
 工作区越界/符号链接、根锚定 `.gitignore` 对根层命中和嵌套同名路径保留、Read 的 UTF-8
 分块/截断/二进制和图片拒绝、原子 prepare/refresh 回滚、
-无 `tools.json`、Mate 稳定 JSON、缓存隔离、
-single-flight 成功与失败、执行不重放、Runtime 四项可选凭据读取与执行期间内存传递、发现请求无凭据、
+无集中式 `tools.json`、Agent 代理与 Skill 调用范围隔离、Session 定义缓存隔离、
+Skill 正文调用时读取和不可读错误、Schema 异常诊断、执行不重放、Runtime 四项可选凭据读取与执行期间内存传递、发现请求无凭据、
 16 种 Header 子集和 null/空字符串的精确 execute 透传、Mate 失败与畸形响应仅调用一次且不泄露正文、
 敏感异常日志保留来源栈而不泄露值、Child 凭据继承、Cron 空凭据仍调用 Mate、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
@@ -365,6 +351,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.13.0 | 2026-09-22 | 对齐框架工具与 Agent 代理装配、Skill 渐进发现及 CallTool 调用边界。 |
 | 1.12.1 | 2026-09-19 | 补记 Mate 凭据规则的实现核验提交并关联专项证据。 |
 | 1.12.0 | 2026-09-19 | Mate 四项凭据改为 execute-only 可选原值透传，由 Mate 在实际调用时判定完整性并收敛失败与日志泄密边界。 |
 | 1.11.0 | 2026-09-18 | 删除 Bash、Edit、Write 工具本体和无消费者专用代码，明确十一项活动工具及无兼容入口边界。 |

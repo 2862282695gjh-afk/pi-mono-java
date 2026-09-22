@@ -16,7 +16,9 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 
-/** Mate 工具单元测试的可信运行时夹具。 */
+/**
+ * Mate 工具单元测试的可信运行时夹具。
+ */
 final class MateToolTestSupport {
 
     static final String AGENT_ID = "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

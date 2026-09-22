@@ -12,11 +12,17 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import com.huawei.hicampus.claw.agent.tool.AgentContext;
+import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.claw.ai.types.TextContent;
+import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
@@ -24,6 +30,8 @@ import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * {@link SkillTool} 的可见性、正文剥离、资源抽样和工作区边界测试。
@@ -87,6 +95,73 @@ class SkillToolTest {
                 .isInstanceOf(SkillTool.SkillExecutionException.class);
         assertThatThrownBy(() -> tool.execute("call", Map.of("name", "missing"), null, null))
                 .isInstanceOf(SkillTool.SkillExecutionException.class);
+    }
+
+    @Test
+    void shouldReadManagedMarkdownAtInvocationInsteadOfPreparedBody() throws Exception {
+        String prepared = "---\nname: course\ndescription: Course\n---\nPrepared body";
+        Path directory = createSkillDirectory("course", prepared);
+        SkillTool tool = tool(skill("course", prepared));
+        Files.writeString(
+                directory.resolve("SKILL.md"),
+                "---\nname: course\ndescription: Course\n---\nCurrent file body",
+                StandardCharsets.UTF_8);
+
+        var result = tool.execute("call", Map.of("name", "course"), null, null);
+
+        assertThat(((TextContent) result.content().getFirst()).text())
+                .contains("Current file body")
+                .doesNotContain("Prepared body", "description: Course");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "directory", "symlink", "invalid-utf8", "unreadable"})
+    void shouldReturnPipelineErrorWhenMarkdownCannotBeRead(String state) throws Exception {
+        String prepared = "---\nname: course\ndescription: Course\n---\nPrepared body";
+        Path markdown = createSkillDirectory("course", prepared).resolve("SKILL.md");
+        SkillTool tool = tool(skill("course", prepared));
+        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(markdown);
+        makeMarkdownUnavailable(markdown, state);
+        Map<String, Object> arguments = Map.of("name", "course");
+        try {
+            var result = new ToolExecutionPipeline()
+                    .execute(
+                            tool,
+                            new ToolCall("call", "Skill", arguments),
+                            arguments,
+                            new AgentContext(),
+                            new CancellationToken(),
+                            null);
+
+            assertThat(result.isError()).isTrue();
+            assertThat(((TextContent) result.content().getFirst()).text())
+                    .doesNotContain("Prepared body", "outside-secret");
+        } finally {
+            if ("unreadable".equals(state)) {
+                Files.setPosixFilePermissions(markdown, permissions);
+            }
+        }
+    }
+
+    private void makeMarkdownUnavailable(Path markdown, String state) throws Exception {
+        switch (state) {
+            case "missing" -> Files.delete(markdown);
+            case "directory" -> {
+                Files.delete(markdown);
+                Files.createDirectory(markdown);
+            }
+            case "symlink" -> {
+                Path outside = Files.writeString(
+                        agentRoot.getParent().resolve("outside-markdown.txt"),
+                        "outside-secret",
+                        StandardCharsets.UTF_8);
+                Files.delete(markdown);
+                Files.createSymbolicLink(markdown, outside);
+            }
+            case "invalid-utf8" -> Files.write(markdown, new byte[] {(byte) 0xc3, (byte) 0x28});
+            case "unreadable" -> Files.setPosixFilePermissions(markdown, Set.of());
+            default -> throw new IllegalArgumentException("Unknown test state: " + state);
+        }
     }
 
     private Path createSkillDirectory(String name, String content) throws Exception {

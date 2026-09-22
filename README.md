@@ -11,10 +11,10 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 
 - **HTTP Runtime V1**：创建和管理 Agent Session，以请求范围 SSE 投影执行事件；
 - **受管 Agent 目录**：从 CampusMate 准备 Agent、Skill 和直接绑定 Child 的运行目录；
-- **固定工具集合**：按 Runtime、Cron、Child profile 装配 PascalCase 内置工具；
+- **工具装配**：按 Runtime、Cron、Child 配置选择框架工具，并追加 Agent 直接关联业务工具代理；
 - **计划模式**：先制作完整方案，审核批准后继续实施，并通过显式任务事件展示进度；
 - **工作区隔离**：本地文件工具只能读取当前 `agent/{agentId}`，拒绝符号链接和 realpath 越界；
-- **Mate 工具**：代理 Agent 直接绑定工具，并通过 Skill 渐进发现和调用业务工具；
+- **Mate 工具**：代理 Agent 直接关联的工具，并通过 Skill 渐进发现和调用业务工具；
 - **Cron 与 Child**：Cron Job 自动绑定当前 Agent，Child 只允许调用直接绑定身份；
 - **CampusMate 模型调用**：受管 Agent 快照提供模型 ID，统一通过 `campusmate` Provider 调用。
 
@@ -220,7 +220,7 @@ coding-agent-cli → common、ai、agent-core、cron。common 不依赖业务模
 | [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、工作区和 Session 装配；计划工具增量见下项 |
 | [计划模式实施说明](docs/plans/campusclaw-plan-mode-implementation.md) | 模式、审核、实施进度和外部 Mate 接入边界 |
 | [`coding-agent-cli.md`](docs/designs/coding-agent-cli.md) | Runtime HTTP 与公共 Session 设计 |
-| [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Mate 实时发现、Session 缓存和名称调用 |
+| [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Agent 工具代理、Skill 渐进发现与 CallTool 执行 |
 | [`cron.md`](docs/designs/cron.md) | Runtime-only Cron 与 Agent 隔离 |
 | [`agent-delegation.md`](docs/designs/agent-delegation.md) | Child Execution 约束 |
 | [`frontend/README.md`](frontend/README.md) | HTTP/SSE 调试客户端 |

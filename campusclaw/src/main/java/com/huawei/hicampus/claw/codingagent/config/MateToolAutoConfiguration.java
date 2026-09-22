@@ -68,7 +68,7 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * 创建 Mate 工具工厂。可信绑定解析、元数据缓存与执行凭据是 Session 私有状态，
+     * 创建 Mate 工具工厂。可信工具关联解析、元数据缓存与执行凭据是 Session 私有状态，
      * 会话组装点每次调用 {@link MateToolsetFactory#createSession(
      * com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime,
      * com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials)} 创建独立状态。
@@ -77,7 +77,7 @@ public class MateToolAutoConfiguration {
      * 为每个 Session 创建独立状态，避免跨 Agent 名称缓存相互覆盖。
      *
      * @param client Mate Tool 客户端
-     * @return 会话私有工具对工厂
+     * @return 创建会话私有解析与执行状态的工具工厂
      */
     @Bean
     public MateToolsetFactory mateToolsetFactory(MateToolClient client) {

@@ -18,7 +18,9 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
-/** 在单个 Session 内按可信 Agent 与 Skill 绑定解析 Mate 工具定义。 */
+/**
+ * 在单个 Session 内按可信 Agent 与 Skill 工具关联解析定义，关联不代替调用授权。
+ */
 final class MateToolResolver {
 
     private final MateToolClient client;

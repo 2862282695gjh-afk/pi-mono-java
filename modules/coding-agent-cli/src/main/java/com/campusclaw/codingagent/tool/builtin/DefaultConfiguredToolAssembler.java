@@ -14,7 +14,7 @@ import com.campusclaw.agent.tool.AgentTool;
 import org.springframework.stereotype.Component;
 
 /**
- * 使用关闭工厂实现启动期 profile 到 Session 工具实例的映射。
+ * 按入口配置创建框架工具，并追加当前 Agent 直接关联的业务工具代理；空配置禁用全部工具。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]

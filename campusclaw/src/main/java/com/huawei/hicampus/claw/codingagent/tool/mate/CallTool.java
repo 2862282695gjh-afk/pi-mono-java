@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 按可信直接 Skill 绑定的业务名称调用 Mate 工具。
+ * 按当前 Agent 直接绑定 Skill 的工具关联范围调用 Mate 工具，调用仍需 Host 权限检查。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/21]
  * @since [br_eCampusCore 26.0.0]

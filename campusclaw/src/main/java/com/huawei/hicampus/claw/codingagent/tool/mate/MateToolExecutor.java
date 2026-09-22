@@ -19,13 +19,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
- * 使用可信绑定统一解析、校验并执行 Agent 或 Skill 来源的 Mate 业务工具。
+ * 按可信工具关联统一解析、校验并执行 Mate 业务工具，调用权限由 Host 单独检查。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/21]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateToolExecutor {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateToolExecutor.class);
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -88,6 +93,12 @@ public class MateToolExecutor {
         } catch (MateToolExecutionException failure) {
             throw failure;
         } catch (RuntimeException failure) {
+            LOGGER.atError()
+                    .addKeyValue("operation", "mate.tool.validateArguments")
+                    .addKeyValue("errorCode", "INVALID_TOOL_SCHEMA")
+                    .addKeyValue("toolId", tool.binding().id())
+                    .setCause(failure)
+                    .log("Failed to validate managed business tool arguments");
             throw new MateToolExecutionException(tool.binding().name(), "business input schema is invalid");
         }
     }

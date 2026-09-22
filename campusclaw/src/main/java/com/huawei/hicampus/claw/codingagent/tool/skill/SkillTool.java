@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.tool.skill;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -28,7 +29,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 按名称加载当前 Agent 直接绑定且模型可见的 Skill 指令和资源路径。
+ * 按可信可见性索引解析 Skill，在调用时读取受管正文并列出资源路径。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/21]
  * @since [br_eCampusCore 26.0.0]
@@ -94,22 +95,27 @@ public class SkillTool implements AgentTool {
             throws Exception {
         ensureNotCancelled(signal);
         String skillName = (String) params.get("name");
-        SkillInfo skill = visibleSkills.get(skillName);
-        if (skill == null) {
+        if (!visibleSkills.containsKey(skillName)) {
             throw new SkillExecutionException("Unknown or unavailable Skill: " + skillName);
         }
-        Path baseDirectory = resolveBaseDirectory(skillName);
+        Path relativeDirectory = skillDirectory(skillName);
+        Path baseDirectory = pathResolver.resolveDirectory(boundary, relativeDirectory.toString());
+        Path markdown = pathResolver.resolveFile(
+                boundary,
+                relativeDirectory
+                        .resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME)
+                        .toString());
+        String content = Files.readString(markdown, StandardCharsets.UTF_8);
+        ensureNotCancelled(signal);
         List<Path> files = sampleFiles(baseDirectory, signal);
-        String output = format(skillName, skill.content(), baseDirectory, files);
+        String output = format(skillName, content, baseDirectory, files);
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(output)), null);
     }
 
-    private Path resolveBaseDirectory(String skillName) {
-        String relative = Path.of(ClawConstants.Runtime.DIRECTORY_NAME)
+    private static Path skillDirectory(String skillName) {
+        return Path.of(ClawConstants.Runtime.DIRECTORY_NAME)
                 .resolve(ClawConstants.Skill.DIRECTORY_NAME)
-                .resolve(skillName)
-                .toString();
-        return pathResolver.resolveDirectory(boundary, relative);
+                .resolve(skillName);
     }
 
     private List<Path> sampleFiles(Path baseDirectory, CancellationToken signal) throws IOException {

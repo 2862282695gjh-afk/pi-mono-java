@@ -27,7 +27,11 @@ import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.test.Log4j2TestAppender;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -144,6 +148,41 @@ class CallToolTest {
                         () -> tool.execute("failed", Map.of("tool", "Query", "args", Map.of("value", "x")), null, null))
                 .isInstanceOf(MateToolExecutionException.class);
         assertThat(client.executeCalls()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldLogInvalidSchemaOnceWithoutExposingItsCauseOrExecutingMate() {
+        client.addTool(meta(QUERY_ID, "Query", Map.of("$ref", "#/$defs/private-missing")));
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "allow")))
+                .createCallTool();
+        Logger logger = (Logger) LogManager.getLogger(MateToolExecutor.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("mate-invalid-schema");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            assertThatThrownBy(() -> tool.execute(
+                            "call", Map.of("tool", "Query", "args", Map.of("value", "private-argument")), null, null))
+                    .isInstanceOf(MateToolExecutionException.class)
+                    .hasMessage("Managed business tool 'Query' failed: business input schema is invalid")
+                    .hasNoCause();
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+
+        assertThat(client.executeCalls()).isZero();
+        assertThat(logs.events()).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getThrown())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Reference /$defs/private-missing cannot be resolved");
+            assertThat(event.getContextData().toMap())
+                    .containsEntry("operation", "mate.tool.validateArguments")
+                    .containsEntry("errorCode", "INVALID_TOOL_SCHEMA")
+                    .containsEntry("toolId", QUERY_ID);
+            assertThat(event.getMessage().getFormattedMessage())
+                    .doesNotContain("private-argument", "token-1", "access-token-1");
+        });
     }
 
     private MateToolSessionState state(

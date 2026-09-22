@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 将一个 Agent 直接绑定业务工具的真实定义适配为 Session 级模型工具。
+ * 将一个 Agent 直接关联的业务工具定义适配为 Session 级模型工具，调用仍需 Host 权限检查。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/21]
  * @since [br_eCampusCore 26.0.0]

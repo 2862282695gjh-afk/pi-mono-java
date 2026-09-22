@@ -9,7 +9,7 @@ import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 
 /**
- * 为每个 Agent Session 创建隔离的 Mate 工具发现与缓存状态。
+ * 为每个 Agent Session 创建隔离的 Mate 定义解析与执行状态，供代理和 CallTool 共用。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]

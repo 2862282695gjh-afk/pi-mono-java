@@ -22,7 +22,7 @@ import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 import org.springframework.stereotype.Component;
 
 /**
- * 使用关闭枚举和 Session 上下文创建框架工具。
+ * 使用框架工具枚举和 Session 上下文创建框架工具实例。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
