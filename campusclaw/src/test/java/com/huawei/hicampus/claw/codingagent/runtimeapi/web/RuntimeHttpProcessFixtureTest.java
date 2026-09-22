@@ -52,7 +52,7 @@ class RuntimeHttpProcessFixtureTest {
         assertThat(snapshot.agentId()).isEqualTo(AGENT_ID);
         assertThat(snapshot.metadata().displayName()).isEqualTo("跨进程测试助手");
         assertThat(snapshot.metadata().description()).containsExactly("分析订单并生成摘要");
-        assertThat(snapshot.metadata().userCases()).containsExactly("请分析本次订单");
+        assertThat(snapshot.metadata().useCases()).containsExactly("请分析本次订单");
         assertThat(snapshot.metadata().bindingModels()).containsExactly(MODEL_ID, SECOND_MODEL_ID);
         assertThat(snapshot.bindingAgents()).isEmpty();
         assertThat(snapshot.skillIdsByName()).containsOnlyKeys(SKILL_NAME).containsEntry(SKILL_NAME, SKILL_ID);

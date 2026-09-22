@@ -54,7 +54,7 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && url.pathname.endsWith('/command')) {
       if (body.name.startsWith('skill:')) return startMessage(response, { content: [{ type: 'text', text: `/${body.name}${body.arguments ? ` ${body.arguments}` : ''}` }] });
-      if (body.name === 'help') return json(response, { displayName: '园区运维助手', description: ['协助梳理巡检、查询记录和整理处理建议。'], userCases: ['梳理明天的巡检重点', '检查东区的设备异常'] });
+      if (body.name === 'help') return json(response, { displayName: '园区运维助手', description: ['协助梳理巡检、查询记录和整理处理建议。'], useCases: ['梳理明天的巡检重点', '检查东区的设备异常'] });
       if (body.name === 'skills') return json(response, { skills: [{ name: 'inspect', description: '园区巡检' }] });
       if (body.name === 'compact') return json(response, { compacted: false });
       if (body.name === 'model' && !body.arguments?.trim()) return json(response, { currentModelId: session.modelId, models: ['model-primary', 'model-secondary'] });

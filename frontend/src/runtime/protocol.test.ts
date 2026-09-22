@@ -305,7 +305,7 @@ describe('command snapshots', () => {
     const skill = freezeInvocation(catalog[2], '/skill:7-day 检查');
     expect(skill).toHaveProperty('executionMode', 'skillEvents');
     expect(() => decodeCommandResult(skill, {})).toThrow();
-    const value = { displayName: '<script>bad</script>', description: ['![x](https://invalid.test)'], userCases: [] };
+    const value = { displayName: '<script>bad</script>', description: ['![x](https://invalid.test)'], useCases: [] };
     expect(decodeCommandResult(freezeInvocation(catalog[1], '/help'), value)).toHaveProperty('value', value);
   });
 });

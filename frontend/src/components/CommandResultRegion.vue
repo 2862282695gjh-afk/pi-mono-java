@@ -20,7 +20,7 @@ defineEmits<{ close: []; 'update:expanded': [expanded: boolean] }>();
       <p v-for="(line, index) in result.value.description" :key="index" class="plain-result">{{ line }}</p>
       <p v-if="!result.value.description.length">暂无介绍。</p>
       <h4>典型使用场景</h4>
-      <ul v-if="result.value.userCases.length"><li v-for="(line, index) in result.value.userCases" :key="index">{{ line }}</li></ul>
+      <ul v-if="result.value.useCases.length"><li v-for="(line, index) in result.value.useCases" :key="index">{{ line }}</li></ul>
       <p v-else>暂无使用场景。</p>
     </template>
     <template v-else-if="result.kind === 'session'">

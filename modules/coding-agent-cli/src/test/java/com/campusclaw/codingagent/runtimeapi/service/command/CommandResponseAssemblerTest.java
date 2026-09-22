@@ -98,10 +98,10 @@ class CommandResponseAssemblerTest {
                 .isEqualTo(
                         json.readTree(
                                 """
-                {"displayName":"Agent name","description":["line one\\nline two","<script>text</script>"],"userCases":["case"]}
+                {"displayName":"Agent name","description":["line one\\nline two","<script>text</script>"],"useCases":["case"]}
                 """));
         assertThatThrownBy(() -> view.getDescription().clear()).isInstanceOf(UnsupportedOperationException.class);
-        assertThatThrownBy(() -> view.getUserCases().clear()).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> view.getUseCases().clear()).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -128,7 +128,7 @@ class CommandResponseAssemblerTest {
     @Test
     void emptyResults_shouldRetainAllArrayFields_andNullableCurrentModel() throws Exception {
         assertThat(json.<JsonNode>valueToTree(assembler.help(new HelpCommandResultDTO("Agent", List.of(), List.of()))))
-                .isEqualTo(json.readTree("{\"displayName\":\"Agent\",\"description\":[],\"userCases\":[]}"));
+                .isEqualTo(json.readTree("{\"displayName\":\"Agent\",\"description\":[],\"useCases\":[]}"));
         assertThat(json.<JsonNode>valueToTree(assembler.skills(new SkillsCommandResultDTO(List.of()))))
                 .isEqualTo(json.readTree("{\"skills\":[]}"));
         assertThat(json.<JsonNode>valueToTree(assembler.models(new ModelCommandResultDTO(null, List.of()))))
@@ -144,7 +144,7 @@ class CommandResponseAssemblerTest {
         texts.clear();
         skillItems.clear();
         assertThat(guide.getDescription()).containsExactly("original");
-        assertThat(guide.getUserCases()).containsExactly("original");
+        assertThat(guide.getUseCases()).containsExactly("original");
         assertThat(skills.getSkills())
                 .extracting(BoundSkillsResponseVO.SkillResponseVO::getName)
                 .containsExactly("pdf");

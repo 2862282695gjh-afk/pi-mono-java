@@ -14,7 +14,7 @@ export type CommandInvocation = Readonly<{
   startedAt: string;
 } & ({ executionMode: 'builtinJson'; expectedResultKind: BuiltinResultKind } | { executionMode: 'skillEvents' })>;
 export type CommandResult = { invocation: CommandInvocation } & (
-  | { kind: 'agentGuide'; value: { displayName: string; description: string[]; userCases: string[] } }
+  | { kind: 'agentGuide'; value: { displayName: string; description: string[]; useCases: string[] } }
   | { kind: 'session'; value: RuntimeSession }
   | { kind: 'models'; value: AvailableModels }
   | { kind: 'compaction'; value: { compacted: boolean } }
@@ -77,7 +77,7 @@ export function decodeCommandResult(invocation: CommandInvocation, value: unknow
     case 'session': return { invocation, kind: 'session', value: decodeSession(data) };
     case 'models': return { invocation, kind: 'models', value: decodeModels(data) };
     case 'agentGuide': return { invocation, kind: 'agentGuide', value: {
-      displayName: nonempty(data.displayName), description: strings(data.description), userCases: strings(data.userCases),
+      displayName: nonempty(data.displayName), description: strings(data.description), useCases: strings(data.useCases),
     } };
     case 'compaction':
       if (typeof data.compacted !== 'boolean') return invalidResponse();

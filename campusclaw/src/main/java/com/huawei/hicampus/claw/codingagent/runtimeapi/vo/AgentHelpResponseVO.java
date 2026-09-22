@@ -20,11 +20,11 @@ public final class AgentHelpResponseVO {
 
     private final List<String> description;
 
-    private final List<String> userCases;
+    private final List<String> useCases;
 
-    public AgentHelpResponseVO(String displayName, List<String> description, List<String> userCases) {
+    public AgentHelpResponseVO(String displayName, List<String> description, List<String> useCases) {
         this.displayName = displayName;
         this.description = List.copyOf(description);
-        this.userCases = List.copyOf(userCases);
+        this.useCases = List.copyOf(useCases);
     }
 }
