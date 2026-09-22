@@ -17,6 +17,7 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -26,7 +27,7 @@ import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundar
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 按可信可见性索引解析 Skill，在调用时读取受管正文并列出资源路径。
@@ -38,7 +39,20 @@ public class SkillTool implements AgentTool {
 
     private static final int SAMPLE_LIMIT = 10;
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Exact name of an available Skill directly bound to the current Agent."
+                }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+            """);
 
     private final WorkspacePathResolver pathResolver;
 
@@ -75,18 +89,7 @@ public class SkillTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var properties = MAPPER.createObjectNode();
-        properties.set(
-                "name",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "Exact name of an available Skill directly bound to the current Agent."));
-        var schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("name"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override

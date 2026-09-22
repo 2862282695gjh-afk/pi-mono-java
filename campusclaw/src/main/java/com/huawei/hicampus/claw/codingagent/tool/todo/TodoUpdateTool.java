@@ -7,6 +7,7 @@ package com.huawei.hicampus.claw.codingagent.tool.todo;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,6 +17,7 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
@@ -34,6 +36,41 @@ public class TodoUpdateTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final List<String> STATUSES = List.of("pending", "in_progress", "completed");
+
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(String.format(
+            Locale.ROOT,
+            """
+            {
+              "type": "object",
+              "properties": {
+                "todos": {
+                  "type": "array",
+                  "maxItems": %d,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": %d
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": %s
+                      }
+                    },
+                    "required": ["content", "status"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["todos"],
+              "additionalProperties": false
+            }
+            """,
+            ClawConstants.RuntimeApi.MAX_TODOS,
+            ClawConstants.RuntimeApi.MAX_TODO_CONTENT_CHARACTERS,
+            MAPPER.valueToTree(STATUSES)));
 
     private static final String DESCRIPTION = "Track implementation progress in build mode; do not call this tool "
             + "during plan-mode research or proposal design. Before multi-step implementation, submit the complete "
@@ -65,24 +102,7 @@ public class TodoUpdateTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode item = MAPPER.createObjectNode().put("type", "object");
-        ObjectNode fields = item.putObject("properties");
-        fields.putObject("content")
-                .put("type", "string")
-                .put("minLength", 1)
-                .put("maxLength", ClawConstants.RuntimeApi.MAX_TODO_CONTENT_CHARACTERS);
-        var status = fields.putObject("status").put("type", "string").putArray("enum");
-        STATUSES.forEach(status::add);
-        item.putArray("required").add("content").add("status");
-        item.put("additionalProperties", false);
-        ObjectNode todos = MAPPER.createObjectNode()
-                .put("type", "array")
-                .put("maxItems", ClawConstants.RuntimeApi.MAX_TODOS)
-                .<ObjectNode>set("items", item);
-        ObjectNode schema = MAPPER.createObjectNode().put("type", "object");
-        schema.putObject("properties").set("todos", todos);
-        schema.putArray("required").add("todos");
-        return schema.put("additionalProperties", false);
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override

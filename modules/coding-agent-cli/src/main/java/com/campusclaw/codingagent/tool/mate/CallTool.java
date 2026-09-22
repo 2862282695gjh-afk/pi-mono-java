@@ -12,8 +12,9 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.PreparedToolInvocation;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 按当前 Agent 直接绑定 Skill 的工具关联范围调用 Mate 工具，调用仍需 Host 权限检查。
@@ -23,7 +24,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class CallTool implements AgentTool {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "description": "Exact unique business tool name available through a directly bound Skill."
+                },
+                "args": {
+                  "type": "object",
+                  "description": "Arguments for the selected business tool; omitted means an empty object."
+                }
+              },
+              "required": ["tool"],
+              "additionalProperties": false
+            }
+            """);
 
     private final MateToolExecutor executor;
 
@@ -56,27 +74,7 @@ public class CallTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var properties = MAPPER.createObjectNode();
-        properties.set(
-                "tool",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put(
-                                "description",
-                                "Exact unique business tool name available through a directly bound Skill."));
-        properties.set(
-                "args",
-                MAPPER.createObjectNode()
-                        .put("type", "object")
-                        .put(
-                                "description",
-                                "Arguments for the selected business tool; omitted means an empty object."));
-        var schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("tool"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @SuppressWarnings("unchecked")

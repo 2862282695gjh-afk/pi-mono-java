@@ -14,6 +14,7 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolDefinitionFormatter;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.mate.MateToolExecutor.InvalidDefinitionException;
@@ -23,6 +24,7 @@ import com.campusclaw.codingagent.tool.mate.MateToolResolver.ResolvedTool;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 按精确技术名返回当前 Agent 可信直接 Skill 关联的单个完整业务工具定义。
@@ -33,6 +35,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class SearchTools implements AgentTool {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Exact unique business tool name referenced by the Skill instructions."
+                }
+              },
+              "required": ["tool"],
+              "additionalProperties": false
+            }
+            """);
 
     private final MateToolExecutor executor;
 
@@ -63,18 +81,7 @@ public class SearchTools implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var tool = MAPPER.createObjectNode();
-        tool.put("type", "string");
-        tool.put("minLength", 1);
-        tool.put("description", "Exact unique business tool name referenced by the Skill instructions.");
-        var properties = MAPPER.createObjectNode();
-        properties.set("tool", tool);
-        var schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("tool"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override

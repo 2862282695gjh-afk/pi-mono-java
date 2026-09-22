@@ -15,6 +15,7 @@ import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.ops.LsOperations;
@@ -23,7 +24,6 @@ import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.campusclaw.codingagent.util.TruncationUtils;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -39,7 +39,23 @@ public class LsTool implements AgentTool {
     static final int MAX_BYTES = 50 * 1024;
     private static final String TRUNCATION_MARKER = "\n... (truncated)";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Directory to list; omitted means the current Agent workspace root."
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of entries; omitted means 500."
+                }
+              },
+              "additionalProperties": false
+            }
+            """);
 
     private final LsOperations lsOperations;
     private final WorkspacePathResolver pathResolver;
@@ -73,21 +89,7 @@ public class LsTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode properties = MAPPER.createObjectNode();
-        properties.set(
-                "path",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "Directory to list; omitted means the current Agent workspace root."));
-        properties.set(
-                "limit",
-                MAPPER.createObjectNode()
-                        .put("type", "number")
-                        .put("description", "Maximum number of entries; omitted means 500."));
-        return MAPPER.createObjectNode()
-                .put("type", "object")
-                .<ObjectNode>set("properties", properties)
-                .put("additionalProperties", false);
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override

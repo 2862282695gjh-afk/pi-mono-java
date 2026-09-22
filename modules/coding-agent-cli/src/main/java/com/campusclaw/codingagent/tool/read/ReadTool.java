@@ -18,6 +18,7 @@ import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.ops.ReadOperations;
@@ -26,7 +27,6 @@ import com.campusclaw.codingagent.tool.workspace.WorkspaceAccessException;
 import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.campusclaw.codingagent.util.TruncationUtils;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -43,7 +43,29 @@ public class ReadTool implements AgentTool {
     private static final String TRUNCATION_NOTICE = "\n\n[Output truncated. Continue with offset and limit.]";
     private static final String FIRST_LINE_TRUNCATION_NOTICE =
             "\n\n[Output truncated: first line exceeds the 50 KB limit.]";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read, relative or absolute within the current Agent workspace."
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from, 1-indexed."
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read."
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+            """);
 
     private final ReadOperations readOperations;
     private final WorkspacePathResolver pathResolver;
@@ -78,18 +100,7 @@ public class ReadTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode properties = MAPPER.createObjectNode();
-        properties.set(
-                "path",
-                stringProperty("Path to the file to read, relative or absolute within the current Agent workspace."));
-        properties.set("offset", numberProperty("Line number to start reading from, 1-indexed."));
-        properties.set("limit", numberProperty("Maximum number of lines to read."));
-        ObjectNode schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("path"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override
@@ -220,14 +231,6 @@ public class ReadTool implements AgentTool {
             }
         }
         return false;
-    }
-
-    private static ObjectNode stringProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "string").put("description", description);
-    }
-
-    private static ObjectNode numberProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "number").put("description", description);
     }
 
     private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {
