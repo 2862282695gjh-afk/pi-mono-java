@@ -89,7 +89,7 @@ class ReadonlyBuiltinCommandTest {
         when(metadata.description())
                 .thenReturn(List.of("  Purpose\nline  ", "  "))
                 .thenReturn(null);
-        when(metadata.userCases()).thenReturn(List.of("  Case one  ", "")).thenReturn(null);
+        when(metadata.useCases()).thenReturn(List.of("  Case one  ", "")).thenReturn(null);
         when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(prepared);
 
         assertThat(execute(session("idle"), "help", ""))

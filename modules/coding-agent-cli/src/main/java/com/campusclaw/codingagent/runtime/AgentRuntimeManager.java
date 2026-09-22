@@ -709,7 +709,7 @@ public class AgentRuntimeManager {
                 runtime.description(),
                 runtime.version(),
                 runtime.enabled(),
-                runtime.userCases());
+                runtime.useCases());
     }
 
     private static AgentSettings toSettings(AgentRuntime runtime) {
@@ -738,7 +738,7 @@ public class AgentRuntimeManager {
                 identity.id(),
                 identity.name(),
                 systemPrompt,
-                identity.userCases() == null ? List.of() : identity.userCases(),
+                identity.useCases() == null ? List.of() : identity.useCases(),
                 identity.version(),
                 settings.mode());
     }
@@ -798,7 +798,7 @@ public class AgentRuntimeManager {
             @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> description,
             String version,
             Boolean enabled,
-            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases) {}
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> useCases) {}
 
     private record AgentSettings(
             int schemaVersion,

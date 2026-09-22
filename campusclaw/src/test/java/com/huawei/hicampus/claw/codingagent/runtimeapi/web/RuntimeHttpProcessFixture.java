@@ -127,7 +127,7 @@ final class RuntimeHttpProcessFixture {
         identity.put("version", "1");
         identity.put("enabled", true);
         identity.putArray("description").add("分析订单并生成摘要");
-        identity.putArray("userCases").add("请分析本次订单");
+        identity.putArray("useCases").add("请分析本次订单");
         return identity.toString();
     }
 

@@ -46,7 +46,7 @@ public class AgentHelpQueryService {
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
         return new HelpCommandResultDTO(
-                displayName.strip(), visibleText(metadata.description()), visibleText(metadata.userCases()));
+                displayName.strip(), visibleText(metadata.description()), visibleText(metadata.useCases()));
     }
 
     private List<String> visibleText(List<String> values) {

@@ -55,7 +55,7 @@ public class CommandResponseAssembler {
     }
 
     public AgentHelpResponseVO help(HelpCommandResultDTO result) {
-        return new AgentHelpResponseVO(result.displayName(), result.description(), result.userCases());
+        return new AgentHelpResponseVO(result.displayName(), result.description(), result.useCases());
     }
 
     public BoundSkillsResponseVO skills(SkillsCommandResultDTO result) {

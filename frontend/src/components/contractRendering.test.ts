@@ -11,7 +11,7 @@ import { decodeCommandResult, freezeInvocation } from '../runtime/commands';
 describe('literal command and tool content', () => {
   it('renders hostile Help as text, never active HTML, links or remote images', async () => {
     const result = decodeCommandResult(freezeInvocation({ name: 'help', kind: 'builtin', description: '' }, '/help'), {
-      displayName: '<script>window.bad=true</script>', description: ['![remote](https://invalid.test/x.png)'], userCases: ['<img src=x onerror=bad()>'],
+      displayName: '<script>window.bad=true</script>', description: ['![remote](https://invalid.test/x.png)'], useCases: ['<img src=x onerror=bad()>'],
     });
     const html = await renderToString(createSSRApp({ render: () => h(CommandResultRegion, { result, expanded: true }) }));
     expect(html).toContain('&lt;script&gt;');
