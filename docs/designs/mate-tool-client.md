@@ -1,8 +1,8 @@
 # Mate Tool Client 与 Session 发现设计
 
-> 文档版本：3.0.0
+> 文档版本：3.1.0
 >
-> 状态：注册与调用已实现；定义文件自动生成、同步与版本一致性待实现
+> 状态：精确发现、注册与调用已实现；数据加载、同步、刷新和跨节点一致性待实现
 >
 > 更新日期：2026-09-22
 > 决策记录：[ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
@@ -12,23 +12,26 @@
 
 ## 1. 源码基线与分层
 
-注册与调用源码核验基线为 `c2b41723702cedfe167ec2cda68c6db65c39b0fa`，设计依据为
-`pi-mono-java-design@879746e59189a07335e32c7df807c7f5048fdc28` 的工具主设计与内置工具契约。
-本文件同次修订补齐调用时读取 `SKILL.md` 与无效 Schema 的异常诊断；不扩大到数据同步设计。
+精确发现、注册与调用源码核验基线为 `8e4d9914106aab8745e6cba801047af816ce5132`，变更前基线为 `ae6645caaade3b9520220a34af940210850ef36a`，设计依据为
+`pi-mono-java-design@01c17dc9ee3dd1d847869066ba495ca42cfee658` 的工具主设计与内置工具契约。本次核验不扩大到数据加载、同步、
+刷新、失效、跨节点一致性或版本切换设计。
 
-以下路径相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`：
+以下路径相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`；标为仓库根的路径
+从仓库根开始：
 
 | 源码与符号 | 当前职责 |
 |---|---|
 | `tool/builtin/DefaultConfiguredToolAssembler#assemble` | 框架工具与 Agent 直接关联工具代理装配，空配置禁用全部工具 |
 | `tool/skill/SkillTool#execute` | 按可信可见性索引定位 Skill，调用时校验并读取正文，抽样列出资源路径 |
 | `tool/mate/MateToolsetFactory#createSession`、`MateToolSessionState` | 创建 Session 私有定义解析与执行状态 |
-| `tool/mate/MateToolResolver#resolveAgentTools/#resolveSkill` | 分别解析 Agent 和直接 Skill 的工具关联，缓存定义，拒绝名称冲突 |
-| `tool/mate/MateToolAdapter#execute`、`CallTool#execute`、`MateToolExecutor` | 两种模型入口共用业务 Schema 校验和单次 Mate execute |
+| `tool/mate/MateToolResolver#resolveAgentTools/#resolveSkill/#resolveDisclosableSkill` | 分别解析 Agent、直接 Skill 与模型可披露 Skill 的工具关联，缓存可信定义，拒绝名称冲突 |
+| `tool/mate/SearchTools#execute` | 只接受精确技术名，返回单个完整 `name/description/inputSchema`，不注册或执行工具 |
+| `tool/mate/MateToolAdapter#execute`、`CallTool#prepare`、`MateToolExecutor` | 两种执行入口共用可信解析、业务 Schema 校验、不可变准备快照和单次 Mate execute |
+| （仓库根）`modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolDefinitionFormatter.java`、`ToolExecutionPipeline#invalidArgumentsResult` | 统一定义字段和超预算恢复提示边界 |
 | `runtimeapi/runtime/RuntimeToolPermissionPolicy#decide` | 按实际入口的可信关联权限执行 Host 授权规则 |
 
 关联定义候选工具范围，不等于调用授权。产品约束是保留 Mate 执行、租户及凭据边界；架构变更是
-Agent 直接工具使用代理、Skill 工具以文件渐进披露，不再提供模型批量发现工具。
+Agent 直接工具使用代理、Skill 工具按精确技术名渐进披露，不提供批量或模糊发现工具。
 
 <a id="credential-source-evidence"></a>
 
@@ -61,30 +64,43 @@ Agent 直接关联的业务工具通过 `MateToolAdapter` 将真实 `name/descri
 与最多 10 条抽样资源绝对路径。正文必须在调用时通过工作区边界校验并读取 UTF-8 文件；缺失、
 不可读、目录或符号链接均走统一工具错误路径。空资源清单仍然成功。
 
-模型再用普通 `Read` 按需读取 `references/<toolName>.json` 中的 `name/description/inputSchema`。
-读取正文和定义均不激活权限、不向模型追加工具；上下文中已有完整定义时无需重复读取。
-定义文件自动生成、数据同步、刷新与版本一致性待实现，本模块不把内部缓存提升为这些能力。
+正文引用业务工具技术名。模型需要定义时调用固定框架工具 `SearchTools({tool})`；它只在当前
+Agent 直接绑定且模型可见的 Skill 工具范围内按大小写敏感的完整名称匹配，成功只返回一个完整
+`name/description/inputSchema`。它不接收 Skill 名、查询词或分页参数，不解析 Markdown 猜名，
+也不注册、激活或执行工具。`Read` 只读取普通资源，不生成或读取工具定义 JSON。
+
+未知、未绑定、不可披露、绑定或元数据无效、同名冲突和无效 Schema 均明确失败。完整定义超过
+结果预算时返回 `TOOL_DEFINITION_TOO_LARGE`，不截断 Schema，也不提示重复查询。代理、
+`SearchTools` 和 `CallTool` 在当前 Session 复用同一可信名称解析和定义缓存，避免同次执行看到
+不同定义；这不等同于数据源同步能力。数据加载策略、同步、刷新、失效、跨节点一致性和版本切换
+仍待实现。
 
 ## 3. CallTool 与统一执行
 
 ![CallTool 的权限检查与单次执行](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L127) · [原尺寸](tool-system-v2/mate_call_refresh.svg)
+[PlantUML 源码](tool-system-v2/diagram.puml#L128) · [原尺寸](tool-system-v2/mate_call_refresh.svg)
 
 `CallTool({tool,args?})` 按名称调用当前 Agent 直接绑定 Skill 所关联的工具，`args` 缺省为 `{}`。
 模型不提交 scope、Skill、toolId 或 URL；仅与 Agent 直接关联的工具和框架工具不在其范围内。
 同名同 ID 可合并，同名不同 ID 或与框架重名必须明确失败；文件内容不扩大可信关联范围。
 
 两种入口均经过 Pipeline 和 Host before hook。代理使用完整业务 Schema；`CallTool` 先校验
-外层 `tool/args`，再执行权限与确认，进入 `MateToolExecutor` 后校验业务参数。关联权限中的
-allow、ask、deny 仍由 Host 处理，Mate 是最终授权和执行权威。
+外层 `tool/args`，再按可信名称解析定义并校验业务参数，生成不可变 `PreparedToolInvocation`。
+Host 随后按解析出的真实工具检查 allow、ask、deny 和必要确认，通过后执行同一准备快照。
+顺序固定为“可信解析 → 参数校验 → 权限或必要确认 → 业务执行 → 结果回传”，Mate 仍是最终
+授权和执行权威。
 
 解析器以 Session 私有状态缓存 Agent 工具及已请求的 Skill 工具定义；按可信关联查询所需
 Skill 元数据，不把整个 Agent 与全部 Skill 的刷新作为 Call 的前置条件。后台元数据查询不
 向模型披露所有 Schema。实际 execute 只发送一次，超时、断线和业务失败不自动重放。
 
-无效业务 Schema 的底层异常由 `MateToolExecutor` 记录一次，包含 operation、errorCode、toolId
-和原始 throwable；对外仍返回稳定失败文本且不带 cause，不记录调用参数或执行凭据。
+参数错误返回真实 `isError=true`、字段错误和同次校验使用的完整可信定义，不确认、不执行、
+不猜参也不自动重放。若整份恢复结果超预算，只有当该业务工具属于 `SearchTools` 可披露范围且
+单个完整定义能独立放入预算时，才提示按精确名称调用 `SearchTools`；框架工具、Agent-only
+代理或单定义仍超限时只说明定义无法返回。无效业务 Schema 的底层异常由 `MateToolExecutor`
+记录一次，包含 operation、errorCode、toolId 和原始 throwable；对外仍返回稳定失败文本且
+不带 cause，不记录调用参数或执行凭据。
 
 ## 4. HTTP 契约与凭据链
 
@@ -131,6 +147,7 @@ HTTP method、path 和请求响应保持不变；2.3.0 只改变哪些请求会�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.1.0 | 2026-09-22 | 实现按精确技术名披露单个可信工具定义，并固定确认前校验、预算和参数恢复边界。 |
 | 3.0.0 | 2026-09-22 | 对齐 Agent 代理、Skill 文件渐进披露、CallTool 统一执行及正文读取错误契约。 |
 | 2.4.1 | 2026-09-19 | 补齐 Mate 凭据已实现行为的源码提交、符号及测试验收范围。 |
 | 2.4.0 | 2026-09-19 | 取消 Claw 的 Mate 凭据完整性检查，按 execute 快照透传非空原值并收敛失败响应与敏感异常日志。 |

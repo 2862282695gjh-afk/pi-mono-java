@@ -1,8 +1,9 @@
 @startuml tool_system_architecture
 ' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
-' Reviewed tool assembly baseline: CampusClaw c2b41723702cedfe167ec2cda68c6db65c39b0fa.
+' Reviewed tool assembly baseline: CampusClaw 8e4d9914106aab8745e6cba801047af816ce5132.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/DefaultConfiguredToolAssembler.java, assemble
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/SearchTools.java, execute
 ' Architecture change: the source-evidence types did not exist at the pre-change baseline.
 ' Observed at reviewed baseline: one session factory serves Runtime, Cron, and Child entry points.
 ' Design reason: host lifecycle stays outside the shared session while tool semantics remain identical.
@@ -33,8 +34,8 @@ Factory --> Assembler
 Assembler --> ToolFactory : configured fixed-name set
 Factory --> State : create per Session
 Assembler --> State : create Agent direct proxies
-ToolFactory --> State : create CallTool
-State *-- Executor : shared by both entry paths
+ToolFactory --> State : create SearchTools and CallTool
+State *-- Executor : shared trusted resolver and executor
 Executor --> Mate : trusted resolve and execute
 note right of Session
   Isolated messages, tools,
@@ -48,7 +49,7 @@ end note
 ' Credential-completeness pre-change baseline: CampusClaw 6a331d3477df23f8404582c3922b55c265530605.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java, submit
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, mateCredentials
-' Tool routing baseline: CampusClaw c2b41723702cedfe167ec2cda68c6db65c39b0fa.
+' Tool routing baseline: CampusClaw 8e4d9914106aab8745e6cba801047af816ce5132.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolResolver.java, loadAgentTools, loadSkillTool
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java, invokeTool
 ' Observed behavior: the pre-change client forwarded three execution credential headers to discovery and execute.
@@ -125,13 +126,13 @@ end note
 @enduml
 
 @startuml mate_call_refresh
-' Implementation baseline: CampusClaw c2b41723702cedfe167ec2cda68c6db65c39b0fa.
+' Implementation baseline: CampusClaw 8e4d9914106aab8745e6cba801047af816ce5132.
 ' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java, execute
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallTool.java, execute
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallTool.java, prepare
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolResolver.java, resolveSkill, loadSkillTool
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolExecutor.java, executeSkill, validateArguments
-' Observed behavior: CallTool resolves only direct Skill associations and validates business args before HTTP.
-' Design reason: association constrains resolution; the Host hook separately checks permission and confirmation.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolExecutor.java, prepareSkill, validateArguments
+' Observed behavior: CallTool resolves trusted direct Skill associations and validates business args before the Host hook.
+' Design reason: the same immutable prepared invocation crosses permission or confirmation and business execution.
 skinparam shadowing false
 title CallTool - Permission, Resolution and Single Execution
 
@@ -142,8 +143,8 @@ participant "MateToolResolver" as Resolver
 participant "MateToolClient" as Mate
 
 Model -> Pipeline : CallTool({tool, args?})
-Pipeline -> Pipeline : validate outer schema\nHost permission and confirmation
-Pipeline -> Call : execute allowed call
+Pipeline -> Pipeline : validate outer schema
+Pipeline -> Call : prepare trusted call
 Call -> Resolver : resolveSkill(name)
 Resolver -> Resolver : check trusted Skill association
 opt definition not cached
@@ -152,14 +153,18 @@ opt definition not cached
   Resolver -> Resolver : match trusted name and ID\ncache this tool definition
 end
 Resolver --> Call : resolved tool or error
-Call -> Call : validate business args and cancellation
-Call -> Mate : callTool(toolId, args, credentials) once
+Call -> Call : validate business args\nfreeze PreparedToolInvocation
+Call --> Pipeline : prepared invocation or isError=true
+Pipeline -> Pipeline : Host permission\nand required confirmation
+Pipeline -> Call : execute same prepared invocation
+Call -> Mate : callTool(toolId, frozen args, credentials) once
 Mate --> Call : result
 Call --> Pipeline : result or failure
 Pipeline --> Model : ToolResultMessage
 note over Pipeline,Mate
   Any failure stops later steps and returns isError=true.
-  Discovery does not add model tools.
+  Invalid args never request confirmation or execute.
+  SearchTools discovery does not add model tools.
   Actual execution is never replayed.
 end note
 @enduml

@@ -66,6 +66,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `Ls` | 列出目录内容 | PARALLEL |
 | `Cron` | 管理当前 Agent 的定时任务 | SEQUENTIAL |
 | `Skill` | 加载当前 Agent 可见 Skill 的正文与资源路径 | PARALLEL |
+| `SearchTools` | 按精确技术名返回直接 Skill 关联的单个完整业务工具定义 | PARALLEL |
 | `CallTool` | 调用直接 Skill 绑定的业务工具 | SEQUENTIAL |
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
 | `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
@@ -83,9 +84,9 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, Skill, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
-    cron: [Read, Find, Grep, Ls, Skill, CallTool, Agent]
-    child-agent: [Read, Find, Grep, Ls, Skill, CallTool]
+    runtime: [Read, Find, Grep, Ls, Cron, Skill, SearchTools, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
+    cron: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool, Agent]
+    child-agent: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool]
 ```
 
 配置列表完全替换缺省值，显式空数组表示不装配工具；未知、重复、大小写错误或已禁用的名称
@@ -118,7 +119,9 @@ agent/{agentId}/
 `PLAN.md` 和 `BUILD.md` 分别完整替换内置同名模式正文；单个文件不存在时只回退该模式的内置正文。
 每次执行准备时固定基础 SYSTEM、Skill 摘要和两种模式正文，批准续跑、修订与压缩都复用该快照。
 两个覆盖文件会随目录刷新保留；空白、目录、链接、非法 UTF-8、超限或不可读文件会使准备失败。
-目录不生成或读取 `tools.json`；Mate 工具列表始终实时查询。
+目录不生成或读取 `tools.json` 或业务工具定义 JSON；`Read` 只读取普通资源。模型需要 Skill
+正文引用的业务工具定义时，使用 `SearchTools({tool})` 精确查询，再以 `CallTool({tool,args?})`
+执行。当前 Session 复用可信解析缓存；远端数据加载、同步、刷新、失效和跨节点一致性另行设计。
 Agent 元数据的 `mode` 为 `build|plan` 字符串，缺省为 `build`；只用于初始化新 Session。
 已有 Session 独立维护模式，刷新 Agent 元数据不会覆盖会话模式。
 

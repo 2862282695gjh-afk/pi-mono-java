@@ -1,8 +1,8 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.13.0
+> 文档版本：1.14.0
 >
-> 状态：工具注册与调用已实现；定义文件自动生成与同步待实现
+> 状态：精确发现、工具注册与调用已实现；数据加载、同步、刷新和跨节点一致性待实现
 >
 > 日期：2026-09-22
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
@@ -20,16 +20,18 @@
 ## 1. 结论与源码基线
 
 CampusClaw 产品运行面通过固定枚举公开 PascalCase 内置工具：`Read`、`Find`、`Grep`、`Ls`、
-`Cron`、`Skill`、`CallTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron 和 Child Agent 通过同一个
+`Cron`、`Skill`、`SearchTools`、`CallTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、
+`AskUserQuestion`。Runtime、Cron 和 Child Agent 通过同一个
 `AgentSessionFactory` 创建相同类型、相同工具 Pipeline 和相同 hook/error/cancellation 语义的
 Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 Execution 上下文彼此隔离。
-框架工具之外，初始集合还包含 Agent 直接关联业务工具的代理；仅由 Skill 关联的业务工具按需
-读取定义文件并通过 `CallTool` 执行。
+框架工具之外，初始集合还包含 Agent 直接关联业务工具的代理；仅由 Skill 关联的业务工具由
+`SearchTools` 按精确技术名返回单个完整定义，再通过 `CallTool` 执行。
 
-注册与调用核验源码为 `c2b41723702cedfe167ec2cda68c6db65c39b0fa`，设计依据为
-`pi-mono-java-design@879746e59189a07335e32c7df807c7f5048fdc28`。本文件同次提交修复
-Skill 正文调用时读取和 Schema 异常诊断；其余专题的历史基线不因此升级。定义文件的自动生成、
-数据同步、刷新及版本一致性待实现。精确职责和调用规则见 [Mate 工具设计](mate-tool-client.md)。
+精确发现、注册与调用核验源码为 `8e4d9914106aab8745e6cba801047af816ce5132`，变更前基线为 `ae6645caaade3b9520220a34af940210850ef36a`，设计依据为
+`pi-mono-java-design@01c17dc9ee3dd1d847869066ba495ca42cfee658`。本次实现覆盖固定 `SearchTools`、可信定义复用、确认前业务参数
+校验、恢复预算和前端参数错误状态；其余专题的历史基线不因此升级。数据来源接入、加载策略、
+同步、刷新、失效、跨节点一致性及版本切换待实现。精确职责和调用规则见
+[Mate 工具设计](mate-tool-client.md)。
 
 计划工具实现核验提交为 `17dbb20ae998c58c2b3f5ae19c254922e9f93210`，变更前基线为
 `29ebec6a8cad99896414211cda28c6fffec71bee`；新增工具、
@@ -75,7 +77,11 @@ Skill 正文调用时读取和 Schema 异常诊断；其余专题的历史基线
   `LocalReadOperations.java`：仅保留文件字节读取和存在性能力；
 - `modules/coding-agent-cli/pom.xml`、`pom.xml`：删除 Read 图片解码所需的 WebP 依赖；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolResolver.java`：Session 内分别解析 Agent 与直接 Skill 工具关联；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/SearchTools.java`：按精确技术名返回模型可披露的单个完整可信定义；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolExecutor.java`：代理与 CallTool 共用的业务 Schema 校验及单次执行；
+- `modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolDefinitionFormatter.java`、
+  `ToolExecutionPipeline.java`：统一定义字段、参数错误和定义预算恢复边界；
+- `frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/components/ToolActivity.vue`：参数错误的调整中与终态展示；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/skill/SkillTool.java`：调用时读取正文、抽样列出资源，不注册 Skill 工具代理；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java`、
   `runtimeapi/event/RuntimeEventService.java`、`session/ManagedAgentSessionRequest.java`：Mate 凭据的执行期间内存传递；
@@ -95,7 +101,7 @@ Skill 正文调用时读取和 Schema 异常诊断；其余专题的历史基线
 
 | 主题 | 基线源码观察 | 本次实现 | 分类与原因 |
 |---|---|---|---|
-| 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 框架枚举 + 入口配置 + Agent 直接工具代理；Skill 文件按需披露 | 架构改造：工具集合有明确来源，Skill Schema 不一次性占用上下文 |
+| 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 框架枚举 + 入口配置 + Agent 直接工具代理；Skill 工具由 SearchTools 按精确技术名返回单个完整可信定义 | 架构改造：工具集合有明确来源，Skill Schema 不一次性占用上下文，也不建立动态激活状态 |
 | 本地文件 | Read/Grep/Ls 可接收进程可见路径，Find 对应旧 Glob | 四工具统一限制到 `agent/{agentId}`，拒绝符号链接和 realpath 越界 | 安全加固：防止跨 Agent 读取 |
 | Read 内容 | 收敛前按 MIME 解码 JPEG/PNG/GIF/WebP/BMP，必要时缩放并输出 `ImageContent` | 仅接受严格 UTF-8 文本并输出 `TextContent`；图片以及含 NUL 或非法 UTF-8 的二进制内容失败 | 产品约束：Read 不再向模型提供本地图片读取入口 |
 | Read 行边界 | 修复前的 `selectLines` 使用 `split("\n", -1)` 的数组长度判断总行数和剩余行，末尾 LF 会产生一个虚构空行 | 空文件按 0 行处理；末尾 LF 只终止最后一行，选择到文件末尾时仍原样保留该 LF | 实现缺陷修复：对齐既有 1-based `offset`/`limit` 契约，不改变产品或架构边界 |
@@ -125,9 +131,9 @@ Host 决定持久化与生命周期；Session 只拥有 Agent、消息、工具�
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, Skill, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
-    cron: [Read, Find, Grep, Ls, Skill, CallTool, Agent]
-    child-agent: [Read, Find, Grep, Ls, Skill, CallTool]
+    runtime: [Read, Find, Grep, Ls, Cron, Skill, SearchTools, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
+    cron: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool, Agent]
+    child-agent: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool]
 ```
 
 配置列表只选择框架工具并完全替换框架缺省值；非空时追加 Agent 直接关联业务工具的代理。
@@ -142,6 +148,7 @@ campusclaw:
 | `Ls` | ✓ | ✓ | ✓ | PARALLEL |
 | `Cron` | ✓ |  |  | SEQUENTIAL |
 | `Skill` | ✓ | ✓ | ✓ | PARALLEL |
+| `SearchTools` | ✓ | ✓ | ✓ | PARALLEL |
 | `CallTool` | ✓ | ✓ | ✓ | SEQUENTIAL |
 | `Agent` | ✓ | ✓ |  | SEQUENTIAL |
 | `ExitPlanMode` | ✓ |  |  | SEQUENTIAL |
@@ -160,7 +167,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L96) · [原尺寸](tool-system-v2/agent_workspace_boundary.svg)
+[PlantUML 源码](tool-system-v2/diagram.puml#L97) · [原尺寸](tool-system-v2/agent_workspace_boundary.svg)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -214,8 +221,10 @@ agent/{agentId}/.campusclaw/
 
 `prepare(agentId)` 完整缓存命中时不访问 Mate；缓存缺失或不完整时在同级 staging 目录生成、
 完整校验后原子发布。管理面 `refresh(agentId)` 总是重新拉取，失败时保留旧目录。目录中的
-Agent/Skill 名称必须和文件路径精确一致且大小写折叠后唯一；旧集中式 `tools.json` 或符号链接使缓存无效；Skill 工具定义目标位置为
-`references/<toolName>.json`，自动生成和同步待实现。HTTP Session 创建、Cron 触发和 Child 执行都会先 prepare；工具配置不热更新。
+Agent/Skill 名称必须和文件路径精确一致且大小写折叠后唯一；旧集中式 `tools.json` 或符号链接使缓存无效。
+`references/` 只承载普通 Skill 资源，不生成或读取业务工具定义 JSON。HTTP Session 创建、Cron
+触发和 Child 执行都会先 prepare；工具配置不热更新。Mate 数据来源接入、加载策略、同步、
+刷新、失效、跨节点一致性和版本切换另行设计。
 
 Agent.mode 缺省为 build，仅在新建交互 Session 时复制。已有会话模式由 Session 维护；
 Child 在实际调用时继承父模式，Cron 维持既有提示词策略。
@@ -229,15 +238,17 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 1. 初始模型集合包含配置的框架工具和 Agent 直接关联业务工具的代理；提示词只列可见 Skill 的名称与描述。
 2. 模型按任务调用 `Skill({name})`，取得受管正文、基础目录和抽样资源路径；正文文件在调用时读取，文件不可读返回错误。
-3. 模型按需用普通 `Read` 读取 Skill 目录的工具定义，再调用 `CallTool({tool,args?})`；读取不追加模型工具，也不授予调用权限。
-4. Host 按真实入口检查可信关联权限，代理与 CallTool 共用 `MateToolExecutor` 校验并执行；实际 HTTP 调用不自动重放。
+3. Skill 正文直接引用业务工具技术名；模型需要定义时调用 `SearchTools({tool})` 精确取得一个完整可信定义，再调用 `CallTool({tool,args?})`；发现不追加模型工具，也不授予调用权限。
+4. `CallTool` 在确认前完成可信解析和业务参数校验，Host 再按真实入口检查权限并在必要时确认；通过后使用同一不可变准备快照执行，实际 HTTP 调用不自动重放。
 
 精确契约、当前 Session 解析缓存和待实现的数据同步边界由 [Mate 工具设计](mate-tool-client.md) 维护。
 不再注册 `ListMateTools` 或 `CallMateTool`，前端仅为历史记录保留旧调用名的展示兼容。
+`SearchTools` 不接受 Skill 名、查询词、limit 或分页参数，不做模糊匹配、排名、Markdown 名称
+推断或激活。未知、不可披露、冲突、元数据缺失、无效 Schema 和完整定义超预算均安全失败。
 
 ![Mate 工具执行级凭据链](tool-system-v2/mate_credential_flow.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L46) · [原尺寸](tool-system-v2/mate_credential_flow.svg)
+[PlantUML 源码](tool-system-v2/diagram.puml#L47) · [原尺寸](tool-system-v2/mate_credential_flow.svg)
 
 Runtime Events 和 Command 入口读取四项可选执行凭据，代理和 CallTool 只在实际 execute 时
 透传当前执行快照。元数据查询不携带凭据，空或部分凭据仍交由 Mate 校验；不写入模型消息、
@@ -336,7 +347,9 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 工作区越界/符号链接、根锚定 `.gitignore` 对根层命中和嵌套同名路径保留、Read 的 UTF-8
 分块/截断/二进制和图片拒绝、原子 prepare/refresh 回滚、
 无集中式 `tools.json`、Agent 代理与 Skill 调用范围隔离、Session 定义缓存隔离、
-Skill 正文调用时读取和不可读错误、Schema 异常诊断、执行不重放、Runtime 四项可选凭据读取与执行期间内存传递、发现请求无凭据、
+Skill 正文调用时读取和不可读错误、SearchTools 精确匹配/不可披露/冲突/无效定义/超预算失败、
+代理与发现及调用的定义一致性、参数错误恢复预算和前端调整中/终态、Schema 异常诊断、执行不重放、
+Runtime 四项可选凭据读取与执行期间内存传递、发现请求无凭据、
 16 种 Header 子集和 null/空字符串的精确 execute 透传、Mate 失败与畸形响应仅调用一次且不泄露正文、
 敏感异常日志保留来源栈而不泄露值、Child 凭据继承、Cron 空凭据仍调用 Mate、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
@@ -351,6 +364,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.14.0 | 2026-09-22 | 实现 SearchTools 精确工具发现、确认前业务参数校验、定义预算恢复和参数错误前端状态。 |
 | 1.13.0 | 2026-09-22 | 对齐框架工具与 Agent 代理装配、Skill 渐进发现及 CallTool 调用边界。 |
 | 1.12.1 | 2026-09-19 | 补记 Mate 凭据规则的实现核验提交并关联专项证据。 |
 | 1.12.0 | 2026-09-19 | Mate 四项凭据改为 execute-only 可选原值透传，由 Mate 在实际调用时判定完整性并收敛失败与日志泄密边界。 |
