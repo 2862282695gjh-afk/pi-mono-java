@@ -150,7 +150,8 @@ class RuntimeCompactionCoordinatorTest {
                 () -> "entry-" + ids.incrementAndGet(),
                 clock));
         coordinator = new RuntimeCompactionCoordinator(registry, repository, projectors, scheduler, properties, clock);
-        when(repository.listCurrentBranchEntries("session", 0L, 500))
+        when(repository.findTimelineUpperBound("session")).thenReturn(2L);
+        when(repository.listTimelineEntries("session", 0L, 2L, 500))
                 .thenReturn(List.of(
                         codec.userEntry("session", "old", "old", List.of(), now),
                         codec.userEntry("session", "kept", "kept", List.of(), now)));

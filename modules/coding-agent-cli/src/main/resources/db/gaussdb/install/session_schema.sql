@@ -40,7 +40,7 @@ CREATE TABLE t_sessions (
     active_leaf_id     VARCHAR(128)
 );
 
-COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
+COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和单条时间线末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
 COMMENT ON COLUMN t_sessions.agent_id IS '创建会话时固定且不可变的 Agent 标识';
 COMMENT ON COLUMN t_sessions.display_name IS '用户设置的当前会话名称；未设置时为空，最多 80 个 UTF-8 字节';
@@ -52,9 +52,9 @@ COMMENT ON COLUMN t_sessions.resource_version IS '配置资源版本号，用于
 COMMENT ON COLUMN t_sessions.created_at IS '创建这个会话的时间';
 COMMENT ON COLUMN t_sessions.updated_at IS '会话配置或运行状态最后更新时间';
 COMMENT ON COLUMN t_sessions.cwd IS '创建会话时使用的工作目录；可用于按工作目录筛选会话';
-COMMENT ON COLUMN t_sessions.parent_session_id IS '当前会话复制自哪个来源会话；没有来源时为空，复制内容只包含来源会话的当前路径';
+COMMENT ON COLUMN t_sessions.parent_session_id IS '当前会话复制自哪个来源会话；没有来源时为空，不表示会话内部分支';
 COMMENT ON COLUMN t_sessions.metadata IS '创建会话时由调用方提供的附加信息 JSON；未提供时为 SQL NULL';
-COMMENT ON COLUMN t_sessions.active_leaf_id IS '当前路径最后一条历史记录的 ID；空会话时为空，普通读取只展示从该记录回溯得到的路径';
+COMMENT ON COLUMN t_sessions.active_leaf_id IS '单条时间线最新历史记录的 ID；空会话时为空，读取不依赖父链回溯';
 
 CREATE INDEX idx_t_sessions_created_at
     ON t_sessions (created_at DESC);
@@ -371,11 +371,11 @@ CREATE TABLE t_session_entries (
     PRIMARY KEY (session_id, id)
 );
 
-COMMENT ON TABLE t_session_entries IS '会话历史记录表，保存可分支回溯的事件数据';
+COMMENT ON TABLE t_session_entries IS '会话历史记录表，按提交顺序保存单条只追加时间线';
 COMMENT ON COLUMN t_session_entries.session_id IS '这条历史记录属于哪个会话；对应 t_sessions.id';
 COMMENT ON COLUMN t_session_entries.id IS '这条历史记录的 ID；在同一个会话内唯一';
-COMMENT ON COLUMN t_session_entries.entry_seq IS '这条历史记录在会话中的持久化顺序号；从 1 开始且严格递增，不表示当前聊天路径';
-COMMENT ON COLUMN t_session_entries.parent_id IS '这条历史记录的直接父记录 ID；根记录为空，系统按该字段回溯当前路径，并保留编辑前的旧路径';
+COMMENT ON COLUMN t_session_entries.entry_seq IS '这条历史记录在会话中的持久化顺序号；从 1 开始且严格递增，允许因共享序号分配产生空洞';
+COMMENT ON COLUMN t_session_entries.parent_id IS '这条历史记录的前一条 Entry ID；首条记录为空，仅用于写入完整性检查';
 COMMENT ON COLUMN t_session_entries.type IS '这条历史记录的种类；新写入不接受 leaf、branch_summary 和 label';
 COMMENT ON COLUMN t_session_entries.timestamp IS '这条历史记录产生时携带的事件时间；不是数据库保存该行的时间';
 COMMENT ON COLUMN t_session_entries.payload IS '这条历史记录的类型相关 JSON 内容；ID、父记录、事件时间和类型分别保存在其他字段中';
@@ -401,7 +401,7 @@ CREATE TABLE t_session_records (
     PRIMARY KEY (session_id, id)
 );
 
-COMMENT ON TABLE t_session_records IS '会话内部运行记录表，保存不参与消息分支的 Usage 等记录';
+COMMENT ON TABLE t_session_records IS '会话内部运行记录表，保存不参与消息时间线的 Usage 等记录';
 COMMENT ON COLUMN t_session_records.session_id IS '这条运行记录属于哪个会话；对应 t_sessions.id';
 COMMENT ON COLUMN t_session_records.id IS '这条运行记录的 ID；在同一个会话内唯一';
 COMMENT ON COLUMN t_session_records.record_seq IS '这条运行记录与 Entry 共享的会话持久化顺序号';
@@ -438,7 +438,7 @@ COMMENT ON TABLE t_session_events IS '会话公共事件权威表，保存 GET �
 COMMENT ON COLUMN t_session_events.session_id IS '这条公共事件属于哪个会话；对应 t_sessions.id';
 COMMENT ON COLUMN t_session_events.event_id IS '对外公开且永不复用的稳定事件标识';
 COMMENT ON COLUMN t_session_events.event_seq IS '公共事件与 Entry、内部 Record 共享的会话提交顺序号';
-COMMENT ON COLUMN t_session_events.anchor_entry_id IS '公共事件所属的分支 Entry 标识，用于判断当前路径可见性';
+COMMENT ON COLUMN t_session_events.anchor_entry_id IS '公共事件所属的 Entry 标识，用于投影完整性和数量校验';
 COMMENT ON COLUMN t_session_events.type IS '完整公共事件的 v2 类型字面值';
 COMMENT ON COLUMN t_session_events.created_at IS '形成权威公共记录时保存一次的 UTC 毫秒时间';
 COMMENT ON COLUMN t_session_events.payload IS '只包含该公共事件安全业务字段的 v2 JSON 对象';
@@ -593,8 +593,8 @@ CREATE TABLE t_session_materialized (
     payload     JSONB        NOT NULL
 );
 
-COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存当前路径等可重建的物化数据';
+COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存单条时间线等可重建的物化数据';
 COMMENT ON COLUMN t_session_materialized.session_id IS '这份汇总属于哪个会话；对应 t_sessions.id，每个会话一行';
-COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；可保存当前路径名称、模型和思考级别等可重建视图，不保存 Usage';
+COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；可保存时间线名称、模型和思考级别等可重建视图，不保存 Usage';
 
 COMMIT;
