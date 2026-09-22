@@ -205,18 +205,21 @@ final class MateToolResolver {
 
     record ResolvedTool(TrustedBinding binding, MateToolMeta metadata) {}
 
-    record TrustedBinding(String id, String name, String displayName, String permission, List<String> skillIds) {
+    record TrustedBinding(
+            String id, String name, String displayName, String permission, String version, List<String> skillIds) {
 
         TrustedBinding {
             skillIds = skillIds == null ? List.of() : List.copyOf(skillIds);
         }
 
         static TrustedBinding agent(BoundTool tool) {
-            return new TrustedBinding(tool.id(), tool.name(), tool.displayName(), tool.permission(), List.of());
+            return new TrustedBinding(
+                    tool.id(), tool.name(), tool.displayName(), tool.permission(), tool.version(), List.of());
         }
 
         static TrustedBinding skill(BoundTool tool, String skillId) {
-            return new TrustedBinding(tool.id(), tool.name(), tool.displayName(), tool.permission(), List.of(skillId));
+            return new TrustedBinding(
+                    tool.id(), tool.name(), tool.displayName(), tool.permission(), tool.version(), List.of(skillId));
         }
 
         TrustedBinding merge(TrustedBinding other) {
@@ -224,7 +227,8 @@ final class MateToolResolver {
             other.skillIds.stream().filter(id -> !sources.contains(id)).forEach(sources::add);
             String mergedDisplayName = java.util.Objects.equals(displayName, other.displayName) ? displayName : null;
             String mergedPermission = java.util.Objects.equals(permission, other.permission) ? permission : null;
-            return new TrustedBinding(id, name, mergedDisplayName, mergedPermission, sources);
+            String mergedVersion = java.util.Objects.equals(version, other.version) ? version : null;
+            return new TrustedBinding(id, name, mergedDisplayName, mergedPermission, mergedVersion, sources);
         }
     }
 }

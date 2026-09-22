@@ -10,6 +10,7 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.agent.tool.PreparedToolInvocation;
 import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,7 +43,9 @@ public class CallTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Call a managed business tool available through a directly bound Skill. Read its definition when needed.";
+        return "Call a managed business tool available through a directly bound Skill. Read its definition when needed."
+                + " If local validation returns a trusted definition, create a new corrected call from it;"
+                + " do not guess fields or repeat unchanged arguments.";
     }
 
     @Override
@@ -75,12 +78,18 @@ public class CallTool implements AgentTool {
 
     @SuppressWarnings("unchecked")
     @Override
-    public AgentToolResult execute(
-            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
-            throws Exception {
+    public PreparedToolInvocation prepare(String toolCallId, Map<String, Object> params) {
         String toolName = (String) params.get("tool");
         Map<String, Object> args =
                 params.get("args") instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.of();
-        return executor.executeSkill(toolName, args, signal);
+        return executor.prepareSkill(toolCallId, toolName, args, params);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public AgentToolResult execute(
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
+            throws Exception {
+        return prepare(toolCallId, params).execute(signal, onUpdate);
     }
 }

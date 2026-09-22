@@ -9,12 +9,18 @@ import java.util.Map;
 
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
+import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
+import com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException;
+import com.huawei.hicampus.claw.agent.tool.ToolSchemaInvalidException;
+import com.huawei.hicampus.claw.agent.tool.ToolSchemaValidator;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolResolver.ResolvedTool;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
@@ -56,48 +62,90 @@ public class MateToolExecutor {
 
     public AgentToolResult executeAgent(String name, Map<String, Object> args, CancellationToken signal)
             throws Exception {
-        return execute(resolver.resolveAgent(name), args, signal);
+        ResolvedTool tool = resolver.resolveAgent(name);
+        JsonNode inputSchema = mapper.valueToTree(tool.metadata().inputSchema());
+        PreparedToolInvocation invocation = prepareValidatedAgent("direct", tool, inputSchema, args);
+        return invocation.execute(signal, partial -> {});
     }
 
     public AgentToolResult executeSkill(String name, Map<String, Object> args, CancellationToken signal)
             throws Exception {
-        return execute(resolver.resolveSkill(name), args, signal);
+        PreparedToolInvocation invocation = prepareSkill("direct", name, args, callToolArguments(name, args));
+        return invocation.execute(signal, partial -> {});
     }
 
-    private AgentToolResult execute(ResolvedTool tool, Map<String, Object> args, CancellationToken signal)
-            throws Exception {
+    PreparedToolInvocation prepareAgent(
+            String toolCallId, ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args) {
+        return prepare(toolCallId, tool.binding().name(), tool, inputSchema, args, args);
+    }
+
+    PreparedToolInvocation prepareValidatedAgent(
+            String toolCallId, ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args) {
+        Map<String, Object> businessArguments = PreparedToolInvocation.snapshotArguments(args);
+        validateArguments(tool, inputSchema, businessArguments);
+        return prepareAgent(toolCallId, tool, inputSchema, businessArguments);
+    }
+
+    PreparedToolInvocation prepareSkill(
+            String toolCallId, String name, Map<String, Object> args, Map<String, Object> invocationArguments) {
+        ResolvedTool tool = resolver.resolveSkill(name);
+        JsonNode inputSchema = mapper.valueToTree(tool.metadata().inputSchema());
+        Map<String, Object> businessArguments = PreparedToolInvocation.snapshotArguments(args);
+        validateArguments(tool, inputSchema, businessArguments);
+        return prepare(toolCallId, "CallTool", tool, inputSchema, businessArguments, invocationArguments);
+    }
+
+    private PreparedToolInvocation prepare(
+            String toolCallId,
+            String invocationName,
+            ResolvedTool tool,
+            JsonNode inputSchema,
+            Map<String, Object> args,
+            Map<String, Object> invocationArguments) {
+        Map<String, Object> businessArguments = PreparedToolInvocation.snapshotArguments(args);
+        return new PreparedMateToolInvocation(
+                this,
+                toolCallId,
+                invocationName,
+                PreparedToolInvocation.snapshotArguments(invocationArguments),
+                tool.binding().id(),
+                tool.binding().name(),
+                tool.binding().version(),
+                inputSchema.deepCopy(),
+                businessArguments);
+    }
+
+    private AgentToolResult executePrepared(
+            String targetId, String targetName, Map<String, Object> args, CancellationToken signal) throws Exception {
         ensureNotCancelled(signal);
-        validateArguments(tool, args);
-        ensureNotCancelled(signal);
-        MateToolClient.ToolResult result = client.callTool(tool.binding().id(), args, credentials);
+        MateToolClient.ToolResult result = client.callTool(targetId, args, credentials);
         if (result.isError()) {
-            throw new MateToolExecutionException(tool.binding().name(), result.content());
+            throw new MateToolExecutionException(targetName, result.content());
         }
         String content = result.content() == null ? "" : result.content();
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(content)), result.metadata());
     }
 
-    private void validateArguments(ResolvedTool tool, Map<String, Object> args) {
+    private void validateArguments(ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args) {
         try {
-            var schema =
-                    schemaFactory.getSchema(mapper.valueToTree(tool.metadata().inputSchema()));
-            var errors = schema.validate(mapper.valueToTree(args));
-            if (!errors.isEmpty()) {
-                String detail = errors.stream()
-                        .map(Object::toString)
-                        .sorted()
-                        .reduce((left, right) -> left + "; " + right)
-                        .orElse("unknown schema validation error");
-                throw new MateToolExecutionException(tool.binding().name(), "arguments failed validation: " + detail);
-            }
-        } catch (MateToolExecutionException failure) {
+            ToolSchemaValidator.validate(
+                    mapper,
+                    schemaFactory,
+                    tool.binding().name(),
+                    tool.metadata().description(),
+                    inputSchema,
+                    args);
+        } catch (ToolArgumentsInvalidException failure) {
             throw failure;
         } catch (RuntimeException failure) {
+            Throwable diagnostic = failure instanceof ToolSchemaInvalidException && failure.getCause() != null
+                    ? failure.getCause()
+                    : failure;
             LOGGER.atError()
                     .addKeyValue("operation", "mate.tool.validateArguments")
                     .addKeyValue("errorCode", "INVALID_TOOL_SCHEMA")
                     .addKeyValue("toolId", tool.binding().id())
-                    .setCause(failure)
+                    .setCause(diagnostic)
                     .log("Failed to validate managed business tool arguments");
             throw new MateToolExecutionException(tool.binding().name(), "business input schema is invalid");
         }
@@ -106,6 +154,43 @@ public class MateToolExecutor {
     private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {
         if (signal != null && signal.isCancelled()) {
             throw new InterruptedException("Tool execution was cancelled");
+        }
+    }
+
+    private static Map<String, Object> callToolArguments(String name, Map<String, Object> args) {
+        return Map.of("tool", name, "args", args);
+    }
+
+    private record PreparedMateToolInvocation(
+            MateToolExecutor executor,
+            String toolCallId,
+            String toolName,
+            Map<String, Object> arguments,
+            String targetId,
+            String targetName,
+            String targetVersion,
+            JsonNode inputSchema,
+            Map<String, Object> businessArguments)
+            implements PreparedToolInvocation {
+
+        @Override
+        public Map<String, Object> arguments() {
+            return PreparedToolInvocation.snapshotArguments(arguments);
+        }
+
+        @Override
+        public String authorizationTargetName() {
+            return targetName;
+        }
+
+        @Override
+        public String authorizationTargetId() {
+            return targetId;
+        }
+
+        @Override
+        public AgentToolResult execute(CancellationToken signal, AgentToolUpdateCallback onUpdate) throws Exception {
+            return executor.executePrepared(targetId, targetName, businessArguments, signal);
         }
     }
 }

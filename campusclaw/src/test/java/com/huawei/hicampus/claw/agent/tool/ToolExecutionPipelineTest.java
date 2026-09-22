@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -30,6 +31,7 @@ import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -186,11 +188,38 @@ class ToolExecutionPipelineTest {
                 tool, toolCall, Map.of("query", 1), sampleContext(), new CancellationToken(), events::add);
 
         assertTrue(result.isError());
-        assertEquals("TOOL_ARGUMENTS_INVALID", text(result.content().getFirst()));
+        JsonNode recovery = json(result.content().getFirst());
+        assertEquals("TOOL_ARGUMENTS_INVALID", recovery.path("code").asText());
+        assertEquals("search", recovery.path("tool").asText());
+        assertEquals("not_started", recovery.path("execution").asText());
+        assertEquals("/query", recovery.path("errors").get(0).path("path").asText());
+        assertTrue(recovery.path("definitionComplete").asBoolean());
+        assertEquals(
+                "string",
+                recovery.at("/definition/inputSchema/properties/query/type").asText());
         assertEquals(Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"), result.details());
         assertFalse(beforeCalled.get());
         assertFalse(tool.executed.get());
         assertTrue(events.isEmpty());
+    }
+
+    @Test
+    void preparesImmutableArgumentsBeforeCallingHook() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new MockAgentTool("search", false, false, 0L);
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("query", "java");
+        var toolCall = new ToolCall("call-1", "search", arguments);
+        pipeline.setBeforeToolCall(context -> {
+            assertEquals("java", context.preparedInvocation().arguments().get("query"));
+            arguments.put("query", "changed");
+            return BeforeToolCallResult.allow();
+        });
+
+        var result = pipeline.execute(tool, toolCall, arguments, sampleContext(), new CancellationToken(), null);
+
+        assertFalse(result.isError());
+        assertEquals("final:java", text(result.content().getFirst()));
     }
 
     @Test
@@ -294,6 +323,14 @@ class ToolExecutionPipelineTest {
 
     private String text(ContentBlock block) {
         return ((TextContent) block).text();
+    }
+
+    private JsonNode json(ContentBlock block) {
+        try {
+            return new ObjectMapper().readTree(text(block));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            throw new AssertionError(error);
+        }
     }
 
     private static final class MockAgentTool implements AgentTool {

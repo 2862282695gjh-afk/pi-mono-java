@@ -10,6 +10,7 @@ import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolResolver.ResolvedTool;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,8 +36,11 @@ public class MateToolAdapter implements AgentTool {
 
     private final JsonNode parameters;
 
+    private final ResolvedTool tool;
+
     MateToolAdapter(MateToolExecutor executor, ResolvedTool tool) {
         this.executor = executor;
+        this.tool = tool;
         this.name = tool.binding().name();
         this.label = normalizeLabel(tool.binding().displayName(), name);
         this.description =
@@ -70,10 +74,16 @@ public class MateToolAdapter implements AgentTool {
     }
 
     @Override
+    public PreparedToolInvocation prepare(String toolCallId, Map<String, Object> params) {
+        return executor.prepareAgent(toolCallId, tool, parameters, params);
+    }
+
+    @Override
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
-        return executor.executeAgent(name, params, signal);
+        return executor.prepareValidatedAgent(toolCallId, tool, parameters, params)
+                .execute(signal, onUpdate);
     }
 
     private static String normalizeLabel(String value, String fallback) {

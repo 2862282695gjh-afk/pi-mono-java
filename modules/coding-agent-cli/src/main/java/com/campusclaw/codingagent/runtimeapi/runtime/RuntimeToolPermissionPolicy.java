@@ -9,6 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import com.campusclaw.agent.tool.BeforeToolCallContext;
+import com.campusclaw.agent.tool.PreparedToolInvocation;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
@@ -59,9 +61,31 @@ public final class RuntimeToolPermissionPolicy {
         return decision(agentDecisions, call.name());
     }
 
+    public Decision decide(BeforeToolCallContext context) {
+        PreparedToolInvocation invocation = context.preparedInvocation();
+        if (invocation == null) {
+            return decide(context.toolCall());
+        }
+        if (BuiltInToolName.CALL_TOOL.externalName().equals(context.toolCall().name())) {
+            return decision(skillDecisions, invocation.authorizationTargetName(), invocation.authorizationTargetId());
+        }
+        if (BUILT_IN_NAMES.contains(context.toolCall().name())) {
+            return Decision.ALLOW;
+        }
+        return decision(agentDecisions, invocation.authorizationTargetName(), invocation.authorizationTargetId());
+    }
+
     private static Decision decision(Map<String, BindingDecision> decisions, String name) {
         BindingDecision binding = decisions.get(name);
         return binding == null || binding.conflicted() ? Decision.DENY : binding.decision();
+    }
+
+    private static Decision decision(Map<String, BindingDecision> decisions, String name, String id) {
+        BindingDecision binding = decisions.get(name);
+        if (binding == null || binding.conflicted() || !java.util.Objects.equals(binding.id(), id)) {
+            return Decision.DENY;
+        }
+        return binding.decision();
     }
 
     private static void merge(Map<String, BindingDecision> decisions, java.util.List<BoundTool> tools) {

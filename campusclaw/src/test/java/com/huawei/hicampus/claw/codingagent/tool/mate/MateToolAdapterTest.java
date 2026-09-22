@@ -15,6 +15,7 @@ import static com.huawei.hicampus.claw.codingagent.tool.mate.MateToolTestSupport
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -91,6 +92,64 @@ class MateToolAdapterTest {
         assertThat(beforeCalls).hasValue(0);
         assertThat(afterCalls).hasValue(0);
         assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void directExecutorShouldKeepBusinessValidation() {
+        MockMateToolClient client = clientWithQuery();
+        var prepared = runtime(List.of(binding(QUERY_ID, "Query", "业务查询", "allow")), List.of());
+        MateToolExecutor executor =
+                new MateToolExecutor(client, MateCredentials.empty(), new MateToolResolver(client, prepared));
+
+        assertThatThrownBy(() -> executor.executeAgent("Query", Map.of(), new CancellationToken()))
+                .isInstanceOf(com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException.class);
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void directAdapterExecutionShouldKeepBusinessValidation() {
+        MockMateToolClient client = clientWithQuery();
+        var prepared = runtime(List.of(binding(QUERY_ID, "Query", "业务查询", "allow")), List.of());
+        MateToolAdapter adapter = (MateToolAdapter) new MateToolsetFactory(client)
+                .createSession(prepared, MateCredentials.empty())
+                .createAgentToolAdapters()
+                .getFirst();
+
+        assertThatThrownBy(() -> adapter.execute("call", Map.of(), new CancellationToken(), ignored -> {}))
+                .isInstanceOf(com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException.class);
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void proxyShouldExecutePreparedTargetAndArgumentsAfterHookStateChanges() {
+        MockMateToolClient client = clientWithQuery();
+        var runtime = runtime(List.of(binding(QUERY_ID, "Query", "业务查询", "ask")), List.of());
+        MateToolAdapter adapter = (MateToolAdapter) new MateToolsetFactory(client)
+                .createSession(runtime, MateCredentials.empty())
+                .createAgentToolAdapters()
+                .getFirst();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("value", "fixed");
+        pipeline.setBeforeToolCall(context -> {
+            assertThat(context.preparedInvocation().authorizationTargetId()).isEqualTo(QUERY_ID);
+            arguments.put("value", "changed");
+            client.bindAgent(AGENT_ID, List.of());
+            return BeforeToolCallResult.allow();
+        });
+
+        var result = pipeline.execute(
+                adapter,
+                new ToolCall("call", "Query", arguments),
+                arguments,
+                new AgentContext(),
+                new CancellationToken(),
+                null);
+
+        assertThat(result.isError()).isFalse();
+        assertThat(client.executeCalls()).isEqualTo(1);
+        assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
+        assertThat(client.lastCallArgs()).isEqualTo(Map.of("value", "fixed"));
     }
 
     @Test

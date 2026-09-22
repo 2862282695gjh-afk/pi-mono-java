@@ -14,20 +14,26 @@ import static com.campusclaw.codingagent.tool.mate.MateToolTestSupport.skill;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.tool.AfterToolCallResult;
 import com.campusclaw.agent.tool.AgentContext;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.agent.tool.ToolArgumentsInvalidException;
 import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
+import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.test.Log4j2TestAppender;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -65,7 +71,7 @@ class CallToolTest {
         assertThat(tool.parameters().path("required").get(0).asText()).isEqualTo("tool");
         assertThat(tool.parameters().path("properties").has("skill")).isFalse();
         assertThatThrownBy(() -> tool.execute("call", Map.of("tool", "Query"), null, null))
-                .isInstanceOf(MateToolExecutionException.class)
+                .isInstanceOf(ToolArgumentsInvalidException.class)
                 .hasMessageContaining("arguments failed validation");
         assertThat(client.lastCallArgs()).isNull();
     }
@@ -100,7 +106,7 @@ class CallToolTest {
     }
 
     @Test
-    void businessSchemaFailureShouldRunExistingBeforeAndAfterLifecycleWithoutHttpCall() {
+    void businessSchemaFailureShouldSkipBeforeAfterAndHttpCallWithRecoveryDefinition() {
         CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "allow")))
                 .createCallTool();
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
@@ -125,8 +131,150 @@ class CallToolTest {
                 null);
 
         assertThat(result.isError()).isTrue();
-        assertThat(beforeCalls).hasValue(1);
-        assertThat(afterCalls).hasValue(1);
+        assertThat(beforeCalls).hasValue(0);
+        assertThat(afterCalls).hasValue(0);
+        assertThat(client.executeCalls()).isZero();
+        JsonNode recovery = recovery(result.content().getFirst());
+        assertThat(recovery.path("code").asText()).isEqualTo("TOOL_ARGUMENTS_INVALID");
+        assertThat(recovery.path("tool").asText()).isEqualTo("Query");
+        assertThat(recovery.path("execution").asText()).isEqualTo("not_started");
+        assertThat(recovery.path("errors").get(0).path("path").asText()).isEqualTo("/value");
+        assertThat(recovery.at("/definition/inputSchema/required/0").asText()).isEqualTo("value");
+        assertThat(result.details()).isEqualTo(Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"));
+    }
+
+    @Test
+    void typeAndEnumFailuresShouldStayBeforeConfirmationAndExecution() {
+        client.addTool(meta(QUERY_ID, "Query", enumValueSchema()));
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "ask")))
+                .createCallTool();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        AtomicInteger beforeCalls = new AtomicInteger();
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalls.incrementAndGet();
+            return BeforeToolCallResult.allow();
+        });
+
+        var wrongType = execute(pipeline, tool, Map.of("value", 1), new CancellationToken());
+        var wrongEnum = execute(pipeline, tool, Map.of("value", "future"), new CancellationToken());
+
+        assertThat(wrongType.isError()).isTrue();
+        assertThat(wrongEnum.isError()).isTrue();
+        assertThat(recovery(wrongType.content().getFirst()).path("errors")).isNotEmpty();
+        assertThat(recovery(wrongEnum.content().getFirst()).path("errors")).isNotEmpty();
+        assertThat(beforeCalls).hasValue(0);
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void outerSchemaFailureShouldReturnOnlyCallToolDefinitionWithoutResolvingTarget() {
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "ask")))
+                .createCallTool();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        AtomicInteger beforeCalls = new AtomicInteger();
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalls.incrementAndGet();
+            return BeforeToolCallResult.allow();
+        });
+        Map<String, Object> invalid = Map.of("tool", 1);
+
+        var result = pipeline.execute(
+                tool,
+                new ToolCall("call", "CallTool", invalid),
+                invalid,
+                new AgentContext(),
+                new CancellationToken(),
+                null);
+
+        JsonNode recovery = recovery(result.content().getFirst());
+        assertThat(recovery.path("tool").asText()).isEqualTo("CallTool");
+        assertThat(recovery.at("/definition/inputSchema/properties/tool/type").asText())
+                .isEqualTo("string");
+        assertThat(client.skillListCalls()).isZero();
+        assertThat(beforeCalls).hasValue(0);
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void legalAskShouldConfirmOnceAndExecutePreparedIdAndArguments() {
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "ask")))
+                .createCallTool();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        AtomicInteger confirmations = new AtomicInteger();
+        Map<String, Object> businessArgs = new HashMap<>();
+        businessArgs.put("value", "fixed");
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("tool", "Query");
+        arguments.put("args", businessArgs);
+        pipeline.setBeforeToolCall(context -> {
+            confirmations.incrementAndGet();
+            assertThat(context.preparedInvocation().authorizationTargetId()).isEqualTo(QUERY_ID);
+            businessArgs.put("value", "changed");
+            client.bindSkill(SKILL_ID, List.of());
+            return BeforeToolCallResult.allow();
+        });
+
+        var result = pipeline.execute(
+                tool,
+                new ToolCall("call", "CallTool", arguments),
+                arguments,
+                new AgentContext(),
+                new CancellationToken(),
+                null);
+
+        assertThat(result.isError()).isFalse();
+        assertThat(confirmations).hasValue(1);
+        assertThat(client.executeCalls()).isEqualTo(1);
+        assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
+        assertThat(client.lastCallArgs()).isEqualTo(Map.of("value", "fixed"));
+    }
+
+    @Test
+    void rejectionAndCancellationShouldNeverExecutePreparedCall() {
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "ask")))
+                .createCallTool();
+        ToolExecutionPipeline rejectedPipeline = new ToolExecutionPipeline();
+        rejectedPipeline.setBeforeToolCall(context -> BeforeToolCallResult.block("denied"));
+
+        var rejected = execute(rejectedPipeline, tool, Map.of("value", "x"), new CancellationToken());
+
+        assertThat(rejected.isError()).isTrue();
+        assertThat(client.executeCalls()).isZero();
+        CancellationToken signal = new CancellationToken();
+        ToolExecutionPipeline cancelledPipeline = new ToolExecutionPipeline();
+        cancelledPipeline.setBeforeToolCall(context -> {
+            signal.cancel();
+            return BeforeToolCallResult.allow();
+        });
+        assertThatThrownBy(() -> execute(cancelledPipeline, tool, Map.of("value", "x"), signal))
+                .isInstanceOf(CancellationException.class);
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void unknownTargetShouldFailBeforeHookWithoutRecoveryDefinition() {
+        CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "ask")))
+                .createCallTool();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        AtomicInteger beforeCalls = new AtomicInteger();
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalls.incrementAndGet();
+            return BeforeToolCallResult.allow();
+        });
+        Map<String, Object> arguments = Map.of("tool", "Unknown", "args", Map.of());
+
+        var result = pipeline.execute(
+                tool,
+                new ToolCall("call", "CallTool", arguments),
+                arguments,
+                new AgentContext(),
+                new CancellationToken(),
+                null);
+
+        assertThat(result.isError()).isTrue();
+        assertThat(((TextContent) result.content().getFirst()).text()).doesNotContain("definitionComplete");
+        assertThat(result.details()).isNull();
+        assertThat(beforeCalls).hasValue(0);
         assertThat(client.executeCalls()).isZero();
     }
 
@@ -151,25 +299,41 @@ class CallToolTest {
     }
 
     @Test
-    void shouldLogInvalidSchemaOnceWithoutExposingItsCauseOrExecutingMate() {
+    void invalidSchemaShouldFailBeforeHookWithoutExposingItsCauseOrExecutingMate() {
         client.addTool(meta(QUERY_ID, "Query", Map.of("$ref", "#/$defs/private-missing")));
         CallTool tool = state(List.of(), List.of(binding(QUERY_ID, "Query", "查询", "allow")))
                 .createCallTool();
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+        AtomicInteger beforeCalls = new AtomicInteger();
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalls.incrementAndGet();
+            return BeforeToolCallResult.allow();
+        });
+        Map<String, Object> arguments = Map.of("tool", "Query", "args", Map.of("value", "private-argument"));
         Logger logger = (Logger) LogManager.getLogger(MateToolExecutor.class);
         Log4j2TestAppender logs = new Log4j2TestAppender("mate-invalid-schema");
         logs.start();
         logger.addAppender(logs);
+        com.campusclaw.ai.types.ToolResultMessage result;
         try {
-            assertThatThrownBy(() -> tool.execute(
-                            "call", Map.of("tool", "Query", "args", Map.of("value", "private-argument")), null, null))
-                    .isInstanceOf(MateToolExecutionException.class)
-                    .hasMessage("Managed business tool 'Query' failed: business input schema is invalid")
-                    .hasNoCause();
+            result = pipeline.execute(
+                    tool,
+                    new ToolCall("call", "CallTool", arguments),
+                    arguments,
+                    new AgentContext(),
+                    new CancellationToken(),
+                    null);
         } finally {
             logger.removeAppender(logs);
             logs.stop();
         }
 
+        assertThat(result.isError()).isTrue();
+        assertThat(((TextContent) result.content().getFirst()).text())
+                .isEqualTo("Managed business tool 'Query' failed: business input schema is invalid")
+                .doesNotContain("private-missing", "private-argument");
+        assertThat(result.details()).isNull();
+        assertThat(beforeCalls).hasValue(0);
         assertThat(client.executeCalls()).isZero();
         assertThat(logs.events()).singleElement().satisfies(event -> {
             assertThat(event.getLevel()).isEqualTo(Level.ERROR);
@@ -196,5 +360,32 @@ class CallToolTest {
     private static void assertRejected(CallTool tool, String name) {
         assertThatThrownBy(() -> tool.execute("call", Map.of("tool", name), null, null))
                 .isInstanceOf(MateToolExecutionException.class);
+    }
+
+    private static com.campusclaw.ai.types.ToolResultMessage execute(
+            ToolExecutionPipeline pipeline, CallTool tool, Map<String, Object> args, CancellationToken signal) {
+        Map<String, Object> arguments = Map.of("tool", "Query", "args", args);
+        return pipeline.execute(
+                tool, new ToolCall("call", "CallTool", arguments), arguments, new AgentContext(), signal, null);
+    }
+
+    private static Map<String, Object> enumValueSchema() {
+        return Map.of(
+                "type",
+                "object",
+                "properties",
+                Map.of("value", Map.of("type", "string", "enum", List.of("active", "cleared"))),
+                "required",
+                List.of("value"),
+                "additionalProperties",
+                false);
+    }
+
+    private static JsonNode recovery(com.campusclaw.ai.types.ContentBlock content) {
+        try {
+            return new ObjectMapper().readTree(((TextContent) content).text());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            throw new AssertionError(error);
+        }
     }
 }

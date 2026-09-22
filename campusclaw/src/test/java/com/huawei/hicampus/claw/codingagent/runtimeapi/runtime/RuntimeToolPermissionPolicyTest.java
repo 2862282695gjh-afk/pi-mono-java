@@ -11,6 +11,11 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 
+import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
+import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
+import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
+import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -61,6 +66,21 @@ class RuntimeToolPermissionPolicyTest {
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
+    @Test
+    void shouldAuthorizePreparedTargetIdentityInsteadOfMutableOuterArguments() {
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "ask")));
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+        ToolCall outerCall = callTool("other");
+        String trustedId = "tool-11111111111111111111111111111111";
+        BeforeToolCallContext trusted = new BeforeToolCallContext(
+                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", trustedId));
+        BeforeToolCallContext wrongId = new BeforeToolCallContext(
+                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", "tool-wrong"));
+
+        assertThat(policy.decide(trusted)).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+        assertThat(policy.decide(wrongId)).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+    }
+
     private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
         PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
         AgentRuntime metadata = mock(AgentRuntime.class);
@@ -82,5 +102,29 @@ class RuntimeToolPermissionPolicyTest {
 
     private static ToolCall agentCall(String tool) {
         return new ToolCall("call-id", tool, Map.of());
+    }
+
+    private record PermissionInvocation(String authorizationTargetName, String authorizationTargetId)
+            implements PreparedToolInvocation {
+
+        @Override
+        public String toolCallId() {
+            return "call-id";
+        }
+
+        @Override
+        public String toolName() {
+            return "CallTool";
+        }
+
+        @Override
+        public Map<String, Object> arguments() {
+            return Map.of("tool", authorizationTargetName, "args", Map.of());
+        }
+
+        @Override
+        public AgentToolResult execute(CancellationToken signal, AgentToolUpdateCallback onUpdate) {
+            throw new AssertionError("permission test must not execute the tool");
+        }
     }
 }

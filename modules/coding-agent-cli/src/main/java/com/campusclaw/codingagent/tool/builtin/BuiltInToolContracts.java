@@ -32,7 +32,9 @@ final class BuiltInToolContracts {
             case CRON -> "Manage scheduled tasks bound to the current managed Agent.";
             case SKILL -> "Load instructions and resource paths for an available Skill by name.";
             case CALL_TOOL ->
-                "Call a managed business tool available through a directly bound Skill. Read its definition when needed.";
+                "Call a managed business tool available through a directly bound Skill. Read its definition when needed."
+                        + " If local validation returns a trusted definition, create a new corrected call from it;"
+                        + " do not guess fields or repeat unchanged arguments.";
             case AGENT -> "Run one directly bound child Agent and return its final answer.";
             case EXIT_PLAN_MODE -> "Submit the proposed plan block from this assistant response for user review.";
             case TODO_UPDATE -> "Track implementation progress in build mode.";

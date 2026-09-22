@@ -33,6 +33,18 @@ public interface AgentTool {
         return ToolExecutionMode.SEQUENTIAL;
     }
 
+    /**
+     * 在权限判断前固定本次调用参数及执行目标。
+     *
+     * @param toolCallId 工具调用标识
+     * @param params 已通过注册 Schema 校验的参数
+     * @return 不可变调用快照
+     * @throws Exception 准备失败
+     */
+    default PreparedToolInvocation prepare(String toolCallId, Map<String, Object> params) throws Exception {
+        return PreparedToolInvocation.fixed(this, toolCallId, params);
+    }
+
     AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception;

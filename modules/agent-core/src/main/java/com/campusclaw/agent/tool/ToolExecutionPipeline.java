@@ -4,6 +4,7 @@
 
 package com.campusclaw.agent.tool;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,8 @@ import com.networknt.schema.SpecVersion;
  * @since [br_eCampusCore 26.0.0]
  */
 public class ToolExecutionPipeline {
+
+    private static final int RECOVERY_CONTENT_MAX_BYTES = 50 * 1024;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
@@ -65,15 +68,20 @@ public class ToolExecutionPipeline {
         if (invalid != null) {
             return invalid;
         }
-        ToolResultMessage blocked = applyBeforeHook(tool, toolCall, validatedArgs, context, toolName);
+        Preparation preparation = prepare(tool, toolCall, validatedArgs, toolName);
+        if (preparation.failure() != null) {
+            return preparation.failure();
+        }
+        PreparedToolInvocation invocation = preparation.invocation();
+        ToolResultMessage blocked = applyBeforeHook(toolCall, invocation, context, toolName);
         throwIfCancelled(signal);
         if (blocked != null) {
             return blocked;
         }
-        eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, validatedArgs));
-        var outcome = invokeTool(tool, toolCall, validatedArgs, signal, eventListener);
+        eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, invocation.arguments()));
+        var outcome = invokeTool(toolCall, invocation, signal, eventListener);
         throwIfCancelled(signal);
-        outcome = applyAfterHook(toolCall, validatedArgs, context, outcome);
+        outcome = applyAfterHook(toolCall, invocation.arguments(), context, outcome);
         eventListener.onEvent(new ToolExecutionEndEvent(toolCall.id(), toolName, outcome.result(), outcome.isError()));
         return toToolResultMessage(toolCall, toolName, outcome.result(), outcome.isError());
     }
@@ -83,15 +91,16 @@ public class ToolExecutionPipeline {
      */
     private record Outcome(AgentToolResult result, boolean isError) {}
 
+    /**
+     * 保存准备结果或准备阶段失败。
+     */
+    private record Preparation(PreparedToolInvocation invocation, ToolResultMessage failure) {}
+
     // before hook 拒绝或抛出异常时返回错误结果，允许继续执行时返回 null。
     private ToolResultMessage applyBeforeHook(
-            AgentTool tool,
-            ToolCall toolCall,
-            Map<String, Object> validatedArgs,
-            AgentContext context,
-            String toolName) {
+            ToolCall toolCall, PreparedToolInvocation invocation, AgentContext context, String toolName) {
         try {
-            var beforeResult = runBeforeHook(toolCall, validatedArgs, context);
+            var beforeResult = runBeforeHook(toolCall, invocation, context);
             if (beforeResult != null && beforeResult.block()) {
                 String reason = beforeResult.reason() != null
                         ? beforeResult.reason()
@@ -105,18 +114,15 @@ public class ToolExecutionPipeline {
     }
 
     private Outcome invokeTool(
-            AgentTool tool,
             ToolCall toolCall,
-            Map<String, Object> validatedArgs,
+            PreparedToolInvocation invocation,
             CancellationToken signal,
             AgentEventListener eventListener) {
         try {
-            var result = normalizeResult(tool.execute(
-                    toolCall.id(),
-                    validatedArgs,
+            var result = normalizeResult(invocation.execute(
                     signal,
                     partialResult -> eventListener.onEvent(new ToolExecutionUpdateEvent(
-                            toolCall.id(), toolCall.name(), validatedArgs, partialResult))));
+                            toolCall.id(), toolCall.name(), invocation.arguments(), partialResult))));
             return new Outcome(result, false);
         } catch (CancellationException e) {
             throw e;
@@ -222,13 +228,14 @@ public class ToolExecutionPipeline {
     }
 
     private BeforeToolCallResult runBeforeHook(
-            ToolCall toolCall, Map<String, Object> validatedArgs, AgentContext context) throws Exception {
+            ToolCall toolCall, PreparedToolInvocation invocation, AgentContext context) throws Exception {
         var handler = beforeToolCallHandler;
         if (handler == null) {
             return null;
         }
 
-        return handler.handle(new BeforeToolCallContext(context.assistantMessage(), toolCall, validatedArgs, context));
+        return handler.handle(new BeforeToolCallContext(
+                context.assistantMessage(), toolCall, invocation.arguments(), context, invocation));
     }
 
     private AfterToolCallResult runAfterHook(
@@ -247,26 +254,28 @@ public class ToolExecutionPipeline {
                 context.assistantMessage(), toolCall, validatedArgs, result, isError, context));
     }
 
-    private void validateArguments(AgentTool tool, Map<String, Object> validatedArgs) {
-        var schema = schemaFactory.getSchema(tool.parameters());
-        var errors = schema.validate(objectMapper.valueToTree(validatedArgs));
-        if (!errors.isEmpty()) {
-            var message = errors.stream()
-                    .map(Object::toString)
-                    .sorted()
-                    .reduce((left, right) -> left + "; " + right)
-                    .orElse("Unknown schema validation error");
-            throw new ToolArgumentsInvalidException("Tool arguments failed validation: " + message);
-        }
-    }
-
     private ToolResultMessage validate(
             AgentTool tool, ToolCall toolCall, Map<String, Object> validatedArgs, String toolName) {
         try {
-            validateArguments(tool, validatedArgs);
+            ToolSchemaValidator.validate(
+                    objectMapper, schemaFactory, tool.name(), tool.description(), tool.parameters(), validatedArgs);
             return null;
         } catch (Exception error) {
             return toToolResultMessage(toolCall, toolName, failureResult(error), true);
+        }
+    }
+
+    private Preparation prepare(AgentTool tool, ToolCall toolCall, Map<String, Object> validatedArgs, String toolName) {
+        try {
+            PreparedToolInvocation invocation = tool.prepare(toolCall.id(), validatedArgs);
+            if (invocation == null) {
+                throw new IllegalStateException("Tool preparation returned no invocation");
+            }
+            return new Preparation(invocation, null);
+        } catch (CancellationException error) {
+            throw error;
+        } catch (Exception error) {
+            return new Preparation(null, toToolResultMessage(toolCall, toolName, failureResult(error), true));
         }
     }
 
@@ -290,12 +299,39 @@ public class ToolExecutionPipeline {
     }
 
     private AgentToolResult failureResult(Exception e) {
-        // 携带稳定错误码的异常只输出错误码，公开边界据此渲染本地化文案。
+        // 参数错误在模型正文携带修正依据，其他稳定错误只输出错误码；公开边界统一渲染本地化文案。
         if (e instanceof com.campusclaw.agent.error.StableErrorCode coded) {
             java.util.Map<String, Object> details = java.util.Map.of("errorCode", coded.stableErrorCode());
-            return new AgentToolResult(List.of(new TextContent(coded.stableErrorCode())), details);
+            String content = coded.stableErrorCode();
+            if (e instanceof ToolArgumentsInvalidException invalid && invalid.hasRecoveryDefinition()) {
+                content = recoveryContent(invalid);
+            }
+            return new AgentToolResult(List.of(new TextContent(content)), details);
         }
         return errorResult(messageForException(e));
+    }
+
+    private String recoveryContent(ToolArgumentsInvalidException failure) {
+        var recovery = objectMapper.createObjectNode();
+        recovery.put("code", failure.stableErrorCode());
+        recovery.put("tool", failure.toolName());
+        recovery.put("execution", "not_started");
+        var errors = recovery.putArray("errors");
+        failure.errors()
+                .forEach(error -> errors.addObject().put("path", error.path()).put("message", error.message()));
+        recovery.put("definitionComplete", true);
+        var definition = recovery.putObject("definition");
+        definition.put("name", failure.toolName());
+        definition.put("description", Objects.requireNonNullElse(failure.toolDescription(), ""));
+        definition.set("inputSchema", failure.inputSchema());
+        String complete = recovery.toString();
+        if (complete.getBytes(StandardCharsets.UTF_8).length <= RECOVERY_CONTENT_MAX_BYTES) {
+            return complete;
+        }
+        recovery.remove("definition");
+        recovery.put("definitionComplete", false);
+        recovery.put("message", "Read the complete trusted definition again by its exact tool name.");
+        return recovery.toString();
     }
 
     private ToolResultMessage toToolResultMessage(

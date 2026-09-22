@@ -429,6 +429,34 @@ class RuntimeEventProjectorTest {
     }
 
     @Test
+    void invalidAskedArgumentsShouldNotCreateConfirmationProjectionOrExposeRecoveryDefinition() {
+        Fixture fixture = fixture(false);
+        ToolCall call = new ToolCall("call-invalid", "CallTool", Map.of("tool", "Query", "args", Map.of()));
+        bindAskPermission(fixture.execution, call);
+        AssistantMessage assistant = assistant(List.of(call));
+        String recovery = "{\"code\":\"TOOL_ARGUMENTS_INVALID\",\"definition\":{\"secret\":true}}";
+        ToolResultMessage result = new ToolResultMessage(
+                call.id(),
+                call.name(),
+                List.of(new TextContent(recovery)),
+                Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"),
+                true,
+                1L);
+
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        fixture.projector.onEvent(new TurnEndEvent(assistant, List.of(result)));
+
+        assertThat(fixture.persistedEvents)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("agent.message", "agent.tool_call", "agent.tool_result");
+        assertThat(fixture.persistedEvents.get(1).getPayload()).contains("\"requiresConfirmation\":false");
+        assertThat(fixture.persistedEvents.get(2).getPayload())
+                .contains("TOOL_ARGUMENTS_INVALID")
+                .doesNotContain("definition", "secret");
+    }
+
+    @Test
     void shouldSeparatePlanPreviewAndCommitAuthoritativeContentWithOneIdentity() throws Exception {
         Fixture fixture = fixture(false);
         fixture.execution.applyMode("plan");
