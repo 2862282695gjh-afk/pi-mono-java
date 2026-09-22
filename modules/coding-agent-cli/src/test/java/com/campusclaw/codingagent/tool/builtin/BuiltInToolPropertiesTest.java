@@ -33,6 +33,7 @@ class BuiltInToolPropertiesTest {
                         "Ls",
                         "Cron",
                         "Skill",
+                        "SearchTools",
                         "CallTool",
                         "Agent",
                         "ExitPlanMode",
@@ -46,6 +47,7 @@ class BuiltInToolPropertiesTest {
                         BuiltInToolName.GREP,
                         BuiltInToolName.LS,
                         BuiltInToolName.SKILL,
+                        BuiltInToolName.SEARCH_TOOLS,
                         BuiltInToolName.CALL_TOOL,
                         BuiltInToolName.AGENT);
         assertThat(properties.toolsFor(ToolEntryPoint.CHILD_AGENT))
@@ -55,6 +57,7 @@ class BuiltInToolPropertiesTest {
                         BuiltInToolName.GREP,
                         BuiltInToolName.LS,
                         BuiltInToolName.SKILL,
+                        BuiltInToolName.SEARCH_TOOLS,
                         BuiltInToolName.CALL_TOOL);
     }
 

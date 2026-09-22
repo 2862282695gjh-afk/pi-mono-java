@@ -4,7 +4,6 @@
 
 package com.campusclaw.agent.tool;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +31,6 @@ import com.networknt.schema.SpecVersion;
  * @since [br_eCampusCore 26.0.0]
  */
 public class ToolExecutionPipeline {
-
-    private static final int RECOVERY_CONTENT_MAX_BYTES = 50 * 1024;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
@@ -320,17 +317,26 @@ public class ToolExecutionPipeline {
         failure.errors()
                 .forEach(error -> errors.addObject().put("path", error.path()).put("message", error.message()));
         recovery.put("definitionComplete", true);
-        var definition = recovery.putObject("definition");
-        definition.put("name", failure.toolName());
-        definition.put("description", Objects.requireNonNullElse(failure.toolDescription(), ""));
-        definition.set("inputSchema", failure.inputSchema());
+        recovery.set(
+                "definition",
+                ToolDefinitionFormatter.toNode(
+                        objectMapper, failure.toolName(), failure.toolDescription(), failure.inputSchema()));
         String complete = recovery.toString();
-        if (complete.getBytes(StandardCharsets.UTF_8).length <= RECOVERY_CONTENT_MAX_BYTES) {
+        if (complete.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                <= com.campusclaw.common.constant.ClawConstants.Tool.MAX_DEFINITION_RESULT_BYTES) {
             return complete;
         }
         recovery.remove("definition");
         recovery.put("definitionComplete", false);
-        recovery.put("message", "Read the complete trusted definition again by its exact tool name.");
+        boolean searchAvailable = failure.searchableDefinition()
+                && ToolDefinitionFormatter.utf8Length(
+                                objectMapper, failure.toolName(), failure.toolDescription(), failure.inputSchema())
+                        <= com.campusclaw.common.constant.ClawConstants.Tool.MAX_DEFINITION_RESULT_BYTES;
+        recovery.put(
+                "message",
+                searchAvailable
+                        ? "Use SearchTools with the exact tool name from the tool field to retrieve its complete definition."
+                        : "The complete definition exceeds the tool result budget and cannot be provided.");
         return recovery.toString();
     }
 

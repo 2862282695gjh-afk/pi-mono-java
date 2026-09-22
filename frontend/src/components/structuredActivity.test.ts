@@ -60,6 +60,19 @@ describe('structured tool activity', () => {
     expect(html).toContain('&quot;success&quot;');
   });
 
+  it('keeps local argument failures neutral and collapsed while preserving their details', async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
+      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallTool', status: 'adjusting',
+      arguments: [], argumentValue: { tool: 'query-device-alarm', args: {} }, result: '参数错误',
+      resultBlocks: ['参数错误'], hasResult: true, isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID',
+    } }) }));
+
+    expect(html).toContain('正在调整调用参数');
+    expect(html).toContain('TOOL_ARGUMENTS_INVALID');
+    expect(html).not.toMatch(/<details class="tool-activity"[^>]* open/gu);
+    expect(html).not.toContain('执行失败');
+  });
+
   it('shows the safe event displayName only in the title and preserves exact Mate arguments', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
       key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallTool',

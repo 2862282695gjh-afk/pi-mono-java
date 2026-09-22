@@ -48,6 +48,7 @@ class MateToolsetFactoryTest {
 
         assertThat(first).isNotSameAs(second);
         assertThat(first.createCallTool()).isNotSameAs(first.createCallTool());
+        assertThat(first.createSearchTools()).isNotSameAs(first.createSearchTools());
         assertThat(client.skillListCalls()).isEqualTo(2);
         assertThat(client.executeCalls()).isEqualTo(3);
         assertThat(client.lastCallCredentials()).isSameAs(secondCredentials);

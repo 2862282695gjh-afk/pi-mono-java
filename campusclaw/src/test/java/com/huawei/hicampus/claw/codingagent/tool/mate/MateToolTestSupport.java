@@ -4,9 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.tool.mate;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +13,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRunti
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures;
 
 /**
  * Mate 工具单元测试的可信运行时夹具。
@@ -30,13 +29,21 @@ final class MateToolTestSupport {
     private MateToolTestSupport() {}
 
     static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<SkillInfo> skills) {
-        PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
-        AgentRuntime metadata = mock(AgentRuntime.class);
-        when(runtime.agentId()).thenReturn(AGENT_ID);
-        when(runtime.metadata()).thenReturn(metadata);
-        when(metadata.bindingTools()).thenReturn(agentTools);
-        when(runtime.skills()).thenReturn(skills);
-        return runtime;
+        AgentRuntime metadata = new AgentRuntime(
+                List.of(),
+                List.of(),
+                agentTools,
+                List.of(),
+                List.of(),
+                "Agent",
+                true,
+                AGENT_ID,
+                "agent",
+                "prompt",
+                List.of(),
+                "1.0.0");
+        return new PreparedAgentRuntime(
+                AGENT_ID, Path.of("agent", AGENT_ID), metadata, skills, AgentPromptTestFixtures.prompts("prompt"));
     }
 
     static SkillInfo skill(List<BoundTool> tools) {

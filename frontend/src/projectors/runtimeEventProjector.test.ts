@@ -47,6 +47,43 @@ describe('Runtime Events presentation', () => {
       toolName: 'Read', displayName: '读取安全配置', status: 'error',
     });
   });
+  it('shows local argument failures as neutral history and only says adjusting for an observed active root', () => {
+    const call = eventFixture({ eventId: 'invalid-call', type: 'agent.tool_call', toolCallId: 'invalid-tool',
+      sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false,
+      arguments: { tool: 'query-device-alarm', args: {} } });
+    const result = eventFixture({ eventId: 'invalid-result', type: 'agent.tool_result', toolCallId: 'invalid-tool',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: '工具参数不符合约束，本次调用未执行。' }],
+      isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
+
+    expect(projectRuntimeEvents([userFixture(), call, result], true).find((turn) => turn.kind === 'activity'))
+      .toMatchObject({ status: 'adjusting', isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
+    expect(projectRuntimeEvents([userFixture(), call, result], false).find((turn) => turn.kind === 'activity'))
+      .toMatchObject({ status: 'invalid_arguments', isError: true });
+    expect(projectRuntimeEvents([userFixture(), call, result, idleFixture('confirming')], true)
+      .find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'invalid_arguments' });
+    expect(projectRuntimeEvents([userFixture(), call, result, idleFixture('failed')], true)
+      .find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'invalid_arguments' });
+  });
+  it('keeps real failures red and does not rewrite an earlier argument failure after a later success', () => {
+    const firstCall = eventFixture({ eventId: 'first-call', type: 'agent.tool_call', toolCallId: 'first',
+      sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false,
+      arguments: { tool: 'query-device-alarm', args: {} } });
+    const invalid = eventFixture({ eventId: 'first-result', type: 'agent.tool_result', toolCallId: 'first',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'invalid' }], isError: true,
+      errorCode: 'TOOL_ARGUMENTS_INVALID' });
+    const secondCall = { ...firstCall, eventId: 'second-call', toolCallId: 'second',
+      arguments: { tool: 'query-device-alarm', args: { deviceId: 'device-1' } } };
+    const success = eventFixture({ eventId: 'second-result', type: 'agent.tool_result', toolCallId: 'second',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
+    const businessFailure = { ...success, eventId: 'business-failure', toolCallId: 'third', isError: true,
+      errorCode: 'TOOL_EXECUTION_FAILED' };
+
+    const activities = projectRuntimeEvents([userFixture(), firstCall, invalid, secondCall, success, businessFailure], true)
+      .filter((turn) => turn.kind === 'activity');
+    expect(activities[0]).toMatchObject({ toolCallId: 'first', status: 'adjusting', isError: true });
+    expect(activities[1]).toMatchObject({ toolCallId: 'second', status: 'completed', isError: false });
+    expect(activities[2]).toMatchObject({ toolCallId: 'third', status: 'error', isError: true });
+  });
   it('replaces a result-only placeholder when the matching call record becomes available', () => {
     const result = eventFixture({ eventId: 'early-result', type: 'agent.tool_result', toolCallId: 'late-tool',
       sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
@@ -103,7 +140,7 @@ describe('Runtime Events presentation', () => {
     const result = eventFixture({ eventId: 'exit-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'exit',
       content: [{ type: 'text', text: '工具参数不符合约束，本次调用未执行。' }], isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
     expect(projectRuntimeEvents([userFixture(), call, result])).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'activity', toolName: 'ExitPlanMode', status: 'error' }),
+      expect.objectContaining({ kind: 'activity', toolName: 'ExitPlanMode', status: 'invalid_arguments' }),
     ]));
   });
   it('marks an undecided plan as stopped after its root terminates', () => {

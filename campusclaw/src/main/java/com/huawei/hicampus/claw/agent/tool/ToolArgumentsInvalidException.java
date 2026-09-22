@@ -26,8 +26,10 @@ public class ToolArgumentsInvalidException extends IllegalArgumentException impl
 
     private final List<ValidationError> errors;
 
+    private final boolean searchableDefinition;
+
     public ToolArgumentsInvalidException(String message) {
-        this(message, null, null, null, List.of());
+        this(message, null, null, null, List.of(), false);
     }
 
     public ToolArgumentsInvalidException(
@@ -36,11 +38,22 @@ public class ToolArgumentsInvalidException extends IllegalArgumentException impl
             String toolDescription,
             JsonNode inputSchema,
             List<ValidationError> errors) {
+        this(message, toolName, toolDescription, inputSchema, errors, false);
+    }
+
+    public ToolArgumentsInvalidException(
+            String message,
+            String toolName,
+            String toolDescription,
+            JsonNode inputSchema,
+            List<ValidationError> errors,
+            boolean searchableDefinition) {
         super(message);
         this.toolName = toolName;
         this.toolDescription = toolDescription;
         this.inputSchema = inputSchema == null ? null : inputSchema.deepCopy();
         this.errors = errors == null ? List.of() : List.copyOf(errors);
+        this.searchableDefinition = searchableDefinition;
     }
 
     public boolean hasRecoveryDefinition() {
@@ -61,6 +74,10 @@ public class ToolArgumentsInvalidException extends IllegalArgumentException impl
 
     public List<ValidationError> errors() {
         return errors;
+    }
+
+    public boolean searchableDefinition() {
+        return searchableDefinition;
     }
 
     @Override

@@ -27,6 +27,7 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.LS,
             BuiltInToolName.CRON,
             BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
             BuiltInToolName.CALL_TOOL,
             BuiltInToolName.AGENT,
             BuiltInToolName.EXIT_PLAN_MODE,
@@ -39,6 +40,7 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.GREP,
             BuiltInToolName.LS,
             BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
             BuiltInToolName.CALL_TOOL,
             BuiltInToolName.AGENT));
 
@@ -48,6 +50,7 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.GREP,
             BuiltInToolName.LS,
             BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
             BuiltInToolName.CALL_TOOL));
 
     public List<String> getRuntime() {

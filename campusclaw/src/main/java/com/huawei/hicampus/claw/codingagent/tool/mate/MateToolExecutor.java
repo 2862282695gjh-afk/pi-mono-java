@@ -91,8 +91,15 @@ public class MateToolExecutor {
         ResolvedTool tool = resolver.resolveSkill(name);
         JsonNode inputSchema = mapper.valueToTree(tool.metadata().inputSchema());
         Map<String, Object> businessArguments = PreparedToolInvocation.snapshotArguments(args);
-        validateArguments(tool, inputSchema, businessArguments);
+        validateArguments(tool, inputSchema, businessArguments, tool.disclosable());
         return prepare(toolCallId, "CallTool", tool, inputSchema, businessArguments, invocationArguments);
+    }
+
+    ResolvedTool resolveSkillDefinition(String name) {
+        ResolvedTool tool = resolver.resolveDisclosableSkill(name);
+        JsonNode inputSchema = mapper.valueToTree(tool.metadata().inputSchema());
+        validateDefinition(tool, inputSchema);
+        return tool;
     }
 
     private PreparedToolInvocation prepare(
@@ -127,6 +134,11 @@ public class MateToolExecutor {
     }
 
     private void validateArguments(ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args) {
+        validateArguments(tool, inputSchema, args, false);
+    }
+
+    private void validateArguments(
+            ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args, boolean searchableDefinition) {
         try {
             ToolSchemaValidator.validate(
                     mapper,
@@ -134,7 +146,8 @@ public class MateToolExecutor {
                     tool.binding().name(),
                     tool.metadata().description(),
                     inputSchema,
-                    args);
+                    args,
+                    searchableDefinition);
         } catch (ToolArgumentsInvalidException failure) {
             throw failure;
         } catch (RuntimeException failure) {
@@ -148,6 +161,34 @@ public class MateToolExecutor {
                     .setCause(diagnostic)
                     .log("Failed to validate managed business tool arguments");
             throw new MateToolExecutionException(tool.binding().name(), "business input schema is invalid");
+        }
+    }
+
+    private void validateDefinition(ResolvedTool tool, JsonNode inputSchema) {
+        try {
+            ToolSchemaValidator.validateDefinition(schemaFactory, inputSchema);
+        } catch (RuntimeException failure) {
+            logInvalidSchema(tool, failure);
+            throw new InvalidDefinitionException(tool.binding().name());
+        }
+    }
+
+    private static void logInvalidSchema(ResolvedTool tool, RuntimeException failure) {
+        Throwable diagnostic = failure instanceof ToolSchemaInvalidException && failure.getCause() != null
+                ? failure.getCause()
+                : failure;
+        LOGGER.atError()
+                .addKeyValue("operation", "mate.tool.validateDefinition")
+                .addKeyValue("errorCode", "INVALID_TOOL_SCHEMA")
+                .addKeyValue("toolId", tool.binding().id())
+                .setCause(diagnostic)
+                .log("Failed to validate managed business tool definition");
+    }
+
+    static final class InvalidDefinitionException extends MateToolExecutionException {
+
+        private InvalidDefinitionException(String toolName) {
+            super(toolName, "business input schema is invalid");
         }
     }
 

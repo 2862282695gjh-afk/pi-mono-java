@@ -32,6 +32,17 @@ public final class ToolSchemaValidator {
             String description,
             JsonNode inputSchema,
             Map<String, Object> arguments) {
+        validate(mapper, schemaFactory, toolName, description, inputSchema, arguments, false);
+    }
+
+    public static void validate(
+            ObjectMapper mapper,
+            JsonSchemaFactory schemaFactory,
+            String toolName,
+            String description,
+            JsonNode inputSchema,
+            Map<String, Object> arguments,
+            boolean searchableDefinition) {
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(schemaFactory, "schemaFactory");
         Objects.requireNonNull(inputSchema, "inputSchema");
@@ -49,7 +60,24 @@ public final class ToolSchemaValidator {
                 .reduce((left, right) -> left + "; " + right)
                 .orElse("Unknown schema validation error");
         throw new ToolArgumentsInvalidException(
-                "Tool arguments failed validation: " + summary, toolName, description, inputSchema, errors);
+                "Tool arguments failed validation: " + summary,
+                toolName,
+                description,
+                inputSchema,
+                errors,
+                searchableDefinition);
+    }
+
+    public static void validateDefinition(JsonSchemaFactory schemaFactory, JsonNode inputSchema) {
+        Objects.requireNonNull(schemaFactory, "schemaFactory");
+        Objects.requireNonNull(inputSchema, "inputSchema");
+        try {
+            schemaFactory
+                    .getSchema(inputSchema)
+                    .validate(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
+        } catch (RuntimeException failure) {
+            throw new ToolSchemaInvalidException(failure);
+        }
     }
 
     private static java.util.Set<ValidationMessage> validateSchema(

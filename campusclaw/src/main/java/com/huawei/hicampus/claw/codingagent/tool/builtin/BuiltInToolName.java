@@ -21,6 +21,7 @@ public enum BuiltInToolName {
     LS("Ls", ToolExecutionMode.PARALLEL),
     CRON("Cron", ToolExecutionMode.SEQUENTIAL),
     SKILL("Skill", ToolExecutionMode.PARALLEL),
+    SEARCH_TOOLS("SearchTools", ToolExecutionMode.PARALLEL),
     CALL_TOOL("CallTool", ToolExecutionMode.SEQUENTIAL),
     AGENT("Agent", ToolExecutionMode.SEQUENTIAL),
     EXIT_PLAN_MODE("ExitPlanMode", ToolExecutionMode.SEQUENTIAL),

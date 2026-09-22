@@ -62,6 +62,10 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
             case LS -> new LsTool(lsOperations, pathResolver, context.workspaceBoundary());
             case CRON -> contextualTool(name, context.cronToolFactory(), context);
             case SKILL -> new SkillTool(pathResolver, context.workspaceBoundary(), context.runtime());
+            case SEARCH_TOOLS ->
+                context.mateToolSessionState() == null
+                        ? unavailable(name, context)
+                        : context.mateToolSessionState().createSearchTools();
             case CALL_TOOL ->
                 context.mateToolSessionState() == null
                         ? unavailable(name, context)

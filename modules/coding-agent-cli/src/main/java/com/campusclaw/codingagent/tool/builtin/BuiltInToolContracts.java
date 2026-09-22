@@ -31,8 +31,12 @@ final class BuiltInToolContracts {
             case LS -> "List directory contents.";
             case CRON -> "Manage scheduled tasks bound to the current managed Agent.";
             case SKILL -> "Load instructions and resource paths for an available Skill by name.";
+            case SEARCH_TOOLS ->
+                "Get one complete business tool definition by its exact unique name within the current Agent's"
+                        + " trusted Skill bindings. This does not register or execute the tool.";
             case CALL_TOOL ->
-                "Call a managed business tool available through a directly bound Skill. Read its definition when needed."
+                "Call a managed business tool available through a directly bound Skill."
+                        + " Use SearchTools when its definition is needed."
                         + " If local validation returns a trusted definition, create a new corrected call from it;"
                         + " do not guess fields or repeat unchanged arguments.";
             case AGENT -> "Run one directly bound child Agent and return its final answer.";
@@ -46,6 +50,7 @@ final class BuiltInToolContracts {
         return switch (name) {
             case CRON -> cronSchema();
             case SKILL -> skillSchema();
+            case SEARCH_TOOLS -> searchToolsSchema();
             case CALL_TOOL -> callToolSchema();
             case AGENT -> agentSchema(childAgentNames);
             case EXIT_PLAN_MODE -> exitPlanModeSchema();
@@ -77,7 +82,7 @@ final class BuiltInToolContracts {
     private static ObjectNode callToolSchema() {
         ObjectNode properties = MAPPER.createObjectNode();
         properties.set(
-                "tool", stringProperty("Exact business tool name from a directly bound Skill's definition file."));
+                "tool", stringProperty("Exact unique business tool name available through a directly bound Skill."));
         properties.set(
                 "args",
                 MAPPER.createObjectNode()
@@ -85,6 +90,14 @@ final class BuiltInToolContracts {
                         .put(
                                 "description",
                                 "Arguments for the selected business tool; omitted means an empty object."));
+        return objectSchema(properties, List.of("tool"));
+    }
+
+    private static ObjectNode searchToolsSchema() {
+        ObjectNode properties = MAPPER.createObjectNode();
+        ObjectNode tool = stringProperty("Exact unique business tool name referenced by the Skill instructions.");
+        tool.put("minLength", 1);
+        properties.set("tool", tool);
         return objectSchema(properties, List.of("tool"));
     }
 

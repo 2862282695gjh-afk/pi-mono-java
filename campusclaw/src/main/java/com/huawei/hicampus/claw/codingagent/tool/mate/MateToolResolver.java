@@ -15,6 +15,7 @@ import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
@@ -33,7 +34,11 @@ final class MateToolResolver {
 
     private volatile Map<String, TrustedBinding> skillBindings;
 
+    private volatile Map<String, TrustedBinding> disclosableSkillBindings;
+
     private final Map<String, ResolvedTool> skillCache = new ConcurrentHashMap<>();
+
+    private final Map<String, MateToolMeta> metadataById = new ConcurrentHashMap<>();
 
     private volatile List<ResolvedTool> agentTools;
 
@@ -62,16 +67,28 @@ final class MateToolResolver {
         return resolveAgentTools().stream()
                 .filter(tool -> tool.binding().name().equals(name))
                 .findFirst()
-                .orElseThrow(() -> failure(name, "not directly bound to the current Agent"));
+                .orElseThrow(() ->
+                        failure(name, ResolutionFailure.NAME_UNAVAILABLE, "not directly bound to the current Agent"));
     }
 
     ResolvedTool resolveSkill(String name) {
         ensureInitialized();
         TrustedBinding binding = skillBindings.get(name);
         if (binding == null) {
-            throw failure(name, "not bound through a directly bound Skill");
+            throw failure(name, ResolutionFailure.NAME_UNAVAILABLE, "not bound through a directly bound Skill");
         }
         return skillCache.computeIfAbsent(name, ignored -> loadSkillTool(binding));
+    }
+
+    ResolvedTool resolveDisclosableSkill(String name) {
+        ensureInitialized();
+        if (!disclosableSkillBindings.containsKey(name)) {
+            throw failure(
+                    name,
+                    ResolutionFailure.NAME_UNAVAILABLE,
+                    "not available through a model-visible directly bound Skill");
+        }
+        return resolveSkill(name);
     }
 
     private List<ResolvedTool> loadAgentTools() {
@@ -81,7 +98,10 @@ final class MateToolResolver {
         List<MateToolMeta> metadata = client.listAgentTools(agentId);
         List<ResolvedTool> resolved = new ArrayList<>();
         for (TrustedBinding binding : agentBindings.values()) {
-            resolved.add(resolveMetadata(binding, metadata));
+            ResolvedTool observed = resolveMetadata(binding, metadata, isDisclosable(binding.name()));
+            MateToolMeta canonical = metadataById.putIfAbsent(binding.id(), observed.metadata());
+            resolved.add(
+                    resolved(binding, canonical == null ? observed.metadata() : canonical, observed.disclosable()));
         }
         return List.copyOf(resolved);
     }
@@ -97,29 +117,43 @@ final class MateToolResolver {
             Map<String, TrustedBinding> agents =
                     indexAgentBindings(runtime.metadata().bindingTools());
             Map<String, TrustedBinding> skills = indexSkillBindings(runtime.skills());
+            Map<String, TrustedBinding> disclosableSkills = indexDisclosableSkillBindings(runtime.skills());
             validateCrossScopeNames(agents, skills);
+            disclosableSkillBindings = disclosableSkills;
             skillBindings = skills;
             agentBindings = agents;
         }
     }
 
     private ResolvedTool loadSkillTool(TrustedBinding binding) {
+        MateToolMeta cached = metadataById.get(binding.id());
+        if (cached != null) {
+            return resolved(binding, cached, isDisclosable(binding.name()));
+        }
         for (String skillId : binding.skillIds()) {
             List<MateToolMeta> metadata = client.listSkillTools(skillId);
             MateToolMeta match = findMetadata(binding, metadata);
             if (match != null) {
-                return resolved(binding, match);
+                MateToolMeta canonical = metadataById.putIfAbsent(binding.id(), match);
+                return resolved(binding, canonical == null ? match : canonical, isDisclosable(binding.name()));
             }
         }
-        throw failure(binding.name(), "trusted Skill binding metadata is unavailable");
+        throw failure(
+                binding.name(),
+                ResolutionFailure.METADATA_UNAVAILABLE,
+                "trusted Skill binding metadata is unavailable");
     }
 
-    private static ResolvedTool resolveMetadata(TrustedBinding binding, List<MateToolMeta> metadata) {
+    private static ResolvedTool resolveMetadata(
+            TrustedBinding binding, List<MateToolMeta> metadata, boolean disclosable) {
         MateToolMeta match = findMetadata(binding, metadata);
         if (match == null) {
-            throw failure(binding.name(), "trusted Agent binding metadata is unavailable");
+            throw failure(
+                    binding.name(),
+                    ResolutionFailure.METADATA_UNAVAILABLE,
+                    "trusted Agent binding metadata is unavailable");
         }
-        return resolved(binding, match);
+        return resolved(binding, match, disclosable);
     }
 
     private static MateToolMeta findMetadata(TrustedBinding binding, List<MateToolMeta> metadata) {
@@ -129,18 +163,18 @@ final class MateToolResolver {
                 continue;
             }
             if (match != null) {
-                throw failure(binding.name(), "duplicate business metadata");
+                throw failure(binding.name(), ResolutionFailure.CONFLICT, "duplicate business metadata");
             }
             match = candidate;
         }
         return match;
     }
 
-    private static ResolvedTool resolved(TrustedBinding binding, MateToolMeta metadata) {
+    private static ResolvedTool resolved(TrustedBinding binding, MateToolMeta metadata, boolean disclosable) {
         if (metadata.inputSchema() == null) {
-            throw failure(binding.name(), "business input schema is unavailable");
+            throw failure(binding.name(), ResolutionFailure.SCHEMA_UNAVAILABLE, "business input schema is unavailable");
         }
-        return new ResolvedTool(binding, metadata);
+        return new ResolvedTool(binding, metadata, disclosable);
     }
 
     private static Map<String, TrustedBinding> indexAgentBindings(List<BoundTool> tools) {
@@ -161,6 +195,24 @@ final class MateToolResolver {
         return Map.copyOf(indexed);
     }
 
+    private static Map<String, TrustedBinding> indexDisclosableSkillBindings(List<SkillInfo> skills) {
+        Map<String, TrustedBinding> indexed = new LinkedHashMap<>();
+        for (SkillInfo skill : skills) {
+            Object disabled = SkillLoader.parseFrontmatter(skill.content()).get("disable-model-invocation");
+            if (Boolean.TRUE.equals(disabled)) {
+                continue;
+            }
+            for (BoundTool tool : skill.bindingTools()) {
+                merge(indexed, TrustedBinding.skill(tool, skill.id()));
+            }
+        }
+        return Map.copyOf(indexed);
+    }
+
+    private boolean isDisclosable(String name) {
+        return disclosableSkillBindings.containsKey(name);
+    }
+
     private static void merge(Map<String, TrustedBinding> indexed, TrustedBinding candidate) {
         validateBinding(candidate);
         TrustedBinding previous = indexed.get(candidate.name());
@@ -169,7 +221,7 @@ final class MateToolResolver {
             return;
         }
         if (!previous.id().equals(candidate.id())) {
-            throw failure(candidate.name(), "maps to different trusted ids");
+            throw failure(candidate.name(), ResolutionFailure.CONFLICT, "maps to different trusted ids");
         }
         indexed.put(candidate.name(), previous.merge(candidate));
     }
@@ -180,11 +232,11 @@ final class MateToolResolver {
         }
         if (binding.id() == null
                 || !ClawConstants.Tool.ID_PATTERN.matcher(binding.id()).matches()) {
-            throw failure(binding.name(), "has an invalid trusted id");
+            throw failure(binding.name(), ResolutionFailure.INVALID_BINDING, "has an invalid trusted id");
         }
         for (BuiltInToolName builtIn : BuiltInToolName.values()) {
             if (builtIn.externalName().equals(binding.name())) {
-                throw failure(binding.name(), "conflicts with a framework tool");
+                throw failure(binding.name(), ResolutionFailure.CONFLICT, "conflicts with a framework tool");
             }
         }
     }
@@ -194,16 +246,38 @@ final class MateToolResolver {
         agentBindings.forEach((name, agentBinding) -> {
             TrustedBinding skillBinding = skillBindings.get(name);
             if (skillBinding != null && !agentBinding.id().equals(skillBinding.id())) {
-                throw failure(name, "maps to different Agent and Skill ids");
+                throw failure(name, ResolutionFailure.CONFLICT, "maps to different Agent and Skill ids");
             }
         });
     }
 
-    private static MateToolExecutionException failure(String name, String detail) {
-        return new MateToolExecutionException(name, detail);
+    private static ResolutionException failure(String name, ResolutionFailure reason, String detail) {
+        return new ResolutionException(name, reason, detail);
     }
 
-    record ResolvedTool(TrustedBinding binding, MateToolMeta metadata) {}
+    enum ResolutionFailure {
+        NAME_UNAVAILABLE,
+        METADATA_UNAVAILABLE,
+        SCHEMA_UNAVAILABLE,
+        INVALID_BINDING,
+        CONFLICT
+    }
+
+    static final class ResolutionException extends MateToolExecutionException {
+
+        private final ResolutionFailure reason;
+
+        private ResolutionException(String name, ResolutionFailure reason, String detail) {
+            super(name, detail);
+            this.reason = reason;
+        }
+
+        ResolutionFailure reason() {
+            return reason;
+        }
+    }
+
+    record ResolvedTool(TrustedBinding binding, MateToolMeta metadata, boolean disclosable) {}
 
     record TrustedBinding(
             String id, String name, String displayName, String permission, String version, List<String> skillIds) {

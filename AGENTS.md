@@ -30,9 +30,9 @@ CampusClaw（`com.campusclaw`，原 `pi-mono-java`）是 JDK 21 + Spring Boot 3.
 
 直接依赖：ai → common；agent-core → ai；cron → agent-core；coding-agent-cli → common、ai、agent-core、cron。common 与 ai、agent、cron、codingagent 同级，不依赖业务模块；直接使用其常量的模块必须声明 common 依赖。
 
-- `BuiltInToolName` 仅允许 `Read`、`Find`、`Grep`、`Ls`、`Cron`、`Skill`、`CallTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron、Child profile 只选择框架工具并严格校验；非空时追加 Agent 直接关联工具代理，显式空配置禁用全部工具。`ToolExecutionMode` 只控制顺序/并行执行。
+- `BuiltInToolName` 仅允许 `Read`、`Find`、`Grep`、`Ls`、`Cron`、`Skill`、`SearchTools`、`CallTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron、Child profile 只选择框架工具并严格校验；非空时追加 Agent 直接关联工具代理，显式空配置禁用全部工具。`ToolExecutionMode` 只控制顺序/并行执行。
 - Runtime、Cron、Child 统一使用 `AgentSessionFactory`；持久化及生命周期由各 Host 管理。`ai` / `agent-core` 使用 Reactor `Mono/Flux`，事件流路径禁止 `.block()`。
-- 元数据默认在 `agent/{agentId}/.campusclaw/`，由 `AgentRuntimeManager` 准备。Skill 只读受管目录；不恢复 PackageManager 或本地 Skill 安装/导入。Agent 直接关联工具使用模型代理；Skill 关联工具通过文件渐进披露，再由 CallTool 按名称调用。关联不代替权限校验。
+- 元数据默认在 `agent/{agentId}/.campusclaw/`，由 `AgentRuntimeManager` 准备。Skill 只读受管目录；不恢复 PackageManager 或本地 Skill 安装/导入。Agent 直接关联工具使用模型代理；Skill 关联工具由 `SearchTools` 按精确名称披露定义，再由 CallTool 按名称调用。关联不代替权限校验。
 - 模型凭据来自部署配置，不写入 Agent 目录。Provider 与模型以源码及 [README](README.md#模型供应商) 为准，不复制数量清单。
 
 ## 构建运行
@@ -146,7 +146,7 @@ CampusClaw（`com.campusclaw`，原 `pi-mono-java`）是 JDK 21 + Spring Boot 3.
 | [README](README.md)、[前端 README](frontend/README.md) | 快速开始、部署/Provider、调试客户端 |
 | [模块架构](docs/module-architecture.md) | 模块、包、依赖及源码证据 |
 | [设计目录](docs/designs)、[ADR 目录](docs/decisions) | 模块/特性设计与重大架构决策 |
-| [工具系统](docs/designs/tool-system-v2.md)、[Mate 客户端](docs/designs/mate-tool-client.md) | 三入口/十一项框架工具、业务代理与 Skill 工具契约 |
+| [工具系统](docs/designs/tool-system-v2.md)、[Mate 客户端](docs/designs/mate-tool-client.md) | 三入口/十二项框架工具、业务代理与 Skill 工具契约 |
 | [Sandbox 清理](docs/designs/sandbox-cleanup.md) | 本地 Sandbox 退役边界 |
 | [HTTP V1 映射](docs/plans/campusclaw-http-v1-implementation.md) | 落地与验证；字段契约在独立设计仓库维护，本仓不复制 OpenAPI 或公共 WebSocket 契约 |
 | [公司镜像](docs/designs/campusclaw-corporate-module.md)、[同步脚本](scripts/sync-campusclaw.sh) | 构建、资源白名单、SQL 与排除规则 |

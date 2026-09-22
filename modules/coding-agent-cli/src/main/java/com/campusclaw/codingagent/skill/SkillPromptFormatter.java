@@ -29,6 +29,9 @@ public class SkillPromptFormatter {
         sb.append("The following skills provide specialized instructions for specific tasks.\n");
         sb.append("Use Skill with the exact name to load instructions when the task matches its description.\n");
         sb.append("Use Read for resource files returned by Skill, and keep every path inside the Agent workspace.\n\n");
+        sb.append("Use SearchTools with that exact tool name when Skill instructions name a business tool and its")
+                .append(" complete definition is needed, then call it through CallTool.\n")
+                .append("Do not guess tool names or arguments, and do not retry unchanged invalid arguments.\n\n");
         sb.append("<available_skills>\n");
 
         for (Skill skill : visibleSkills) {

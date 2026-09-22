@@ -43,7 +43,8 @@ public class CallTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Call a managed business tool available through a directly bound Skill. Read its definition when needed."
+        return "Call a managed business tool available through a directly bound Skill."
+                + " Use SearchTools when its definition is needed."
                 + " If local validation returns a trusted definition, create a new corrected call from it;"
                 + " do not guess fields or repeat unchanged arguments.";
     }
@@ -60,7 +61,9 @@ public class CallTool implements AgentTool {
                 "tool",
                 MAPPER.createObjectNode()
                         .put("type", "string")
-                        .put("description", "Exact business tool name from a directly bound Skill's definition file."));
+                        .put(
+                                "description",
+                                "Exact unique business tool name available through a directly bound Skill."));
         properties.set(
                 "args",
                 MAPPER.createObjectNode()

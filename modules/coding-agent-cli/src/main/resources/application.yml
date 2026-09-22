@@ -45,6 +45,7 @@ campusclaw:
       - Ls
       - Cron
       - Skill
+      - SearchTools
       - CallTool
       - Agent
       - ExitPlanMode
@@ -56,6 +57,7 @@ campusclaw:
       - Grep
       - Ls
       - Skill
+      - SearchTools
       - CallTool
       - Agent
     child-agent:
@@ -64,6 +66,7 @@ campusclaw:
       - Grep
       - Ls
       - Skill
+      - SearchTools
       - CallTool
   runtime:
     compaction:

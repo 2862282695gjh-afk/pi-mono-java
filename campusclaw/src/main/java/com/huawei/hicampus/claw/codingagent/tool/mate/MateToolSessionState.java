@@ -29,4 +29,8 @@ public class MateToolSessionState {
     public CallTool createCallTool() {
         return new CallTool(executor);
     }
+
+    public SearchTools createSearchTools() {
+        return new SearchTools(executor);
+    }
 }
