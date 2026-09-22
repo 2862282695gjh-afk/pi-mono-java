@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -44,6 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository {
     private static final int COMPACTION_HISTORY_PAGE_SIZE = 500;
+
+    private static final Set<String> RETIRED_BRANCH_ENTRY_TYPES = Set.of("leaf", "branch_summary", "label");
 
     private final RuntimeSessionMapper mapper;
 
@@ -150,10 +153,11 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         List<RuntimeEntryDTO> entries = new ArrayList<>();
         if (RuntimeSessionState.IDLE.matches(session.getState())) {
+            long upperBound = mapper.findTimelineUpperBound(sessionId);
             long afterSeq = 0L;
             List<RuntimeEntryDTO> page;
             do {
-                page = mapper.listCurrentBranchEntries(sessionId, afterSeq, COMPACTION_HISTORY_PAGE_SIZE);
+                page = mapper.listTimelineEntries(sessionId, afterSeq, upperBound, COMPACTION_HISTORY_PAGE_SIZE);
                 entries.addAll(page);
                 if (!page.isEmpty()) {
                     afterSeq = page.getLast().getEntrySeq();
@@ -249,8 +253,14 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional(readOnly = true)
-    public List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit) {
-        return mapper.listCurrentBranchEntries(sessionId, afterSeq, limit);
+    public long findTimelineUpperBound(String sessionId) {
+        return mapper.findTimelineUpperBound(sessionId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RuntimeEntryDTO> listTimelineEntries(String sessionId, long afterSeq, long upperBound, int limit) {
+        return mapper.listTimelineEntries(sessionId, afterSeq, upperBound, limit);
     }
 
     @Override
@@ -259,8 +269,8 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         if (mapper.findSession(sessionId) == null) {
             return Optional.empty();
         }
-        if (mapper.countUnmappedCurrentBranchEntries(sessionId) > 0L) {
-            throw new IllegalStateException("current branch event mapping is incomplete");
+        if (mapper.countUnmappedTimelineEntries(sessionId) > 0L) {
+            throw new IllegalStateException("session timeline event mapping is incomplete");
         }
         return Optional.of(mapper.listCommittedEvents(sessionId, offset, limit));
     }
@@ -490,6 +500,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     }
 
     private void appendLocked(RuntimeSessionDTO session, RuntimeEntryDTO entry) {
+        requireAppendableEntry(session, entry);
         Long sequence = mapper.lockNextSequence(session.getId());
         if (sequence == null) {
             throw new IllegalStateException("session sequence is missing");
@@ -500,6 +511,15 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         requireOne(mapper.insertEntry(entry), "runtime entry was not inserted");
         requireOne(mapper.incrementSequence(session.getId()), "session sequence was not incremented");
         session.setActiveLeafId(entry.getId());
+    }
+
+    private static void requireAppendableEntry(RuntimeSessionDTO session, RuntimeEntryDTO entry) {
+        if (!Objects.equals(session.getId(), entry.getSessionId())) {
+            throw new IllegalArgumentException("runtime entry belongs to another session");
+        }
+        if (RETIRED_BRANCH_ENTRY_TYPES.contains(entry.getType())) {
+            throw new IllegalArgumentException("runtime entry type is not appendable");
+        }
     }
 
     private RuntimeSessionDTO lockSession(String sessionId) {

@@ -93,6 +93,38 @@ class MyBatisRuntimeSessionRepositoryTest {
         verify(mapper, never()).updateActiveLeaf(any(), any());
     }
 
+    @ParameterizedTest
+    @CsvSource({"leaf", "branch_summary", "label"})
+    void shouldRejectRetiredBranchEntryTypes(String type) {
+        RuntimeSessionMapper mapper = successfulMapper();
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session());
+        RuntimeEntryDTO entry = entry();
+        entry.setType(type);
+
+        assertThatThrownBy(() -> new MyBatisRuntimeSessionRepository(mapper).appendEntry(entry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("runtime entry type is not appendable");
+
+        verify(mapper, never()).lockNextSequence(any());
+        verify(mapper, never()).insertEntry(any());
+    }
+
+    @Test
+    void shouldRejectEntryOwnedByAnotherSession() {
+        RuntimeSessionMapper mapper = successfulMapper();
+        when(mapper.lockSessionForUpdate("other-session")).thenReturn(session());
+        when(mapper.findLifetimeUsage("other-session")).thenReturn(new RuntimeLifetimeUsageDTO());
+        RuntimeEntryDTO entry = entry();
+        entry.setSessionId("other-session");
+
+        assertThatThrownBy(() -> new MyBatisRuntimeSessionRepository(mapper).appendEntry(entry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("runtime entry belongs to another session");
+
+        verify(mapper, never()).lockNextSequence(any());
+        verify(mapper, never()).insertEntry(any());
+    }
+
     @Test
     void appendsEntryUsageAndCommittedEventWithSharedSequence() {
         RuntimeSessionMapper mapper = successfulMapper();

@@ -693,7 +693,7 @@ public class RuntimeEventProjector {
     }
 
     private void projectCompaction(SessionCompactionCompletedEvent event) {
-        List<RuntimeEntryDTO> entries = loadCurrentBranch();
+        List<RuntimeEntryDTO> entries = loadTimeline();
         List<String> contextIds = codec.toAgentContextEntryIds(entries);
         int firstKeptIndex = event.result().compactedMessageCount();
         if (firstKeptIndex < 0 || firstKeptIndex >= contextIds.size()) {
@@ -750,11 +750,13 @@ public class RuntimeEventProjector {
         return entryId;
     }
 
-    private List<RuntimeEntryDTO> loadCurrentBranch() {
+    private List<RuntimeEntryDTO> loadTimeline() {
         List<RuntimeEntryDTO> entries = new ArrayList<>();
+        long upperBound = repository.findTimelineUpperBound(sessionId);
         long afterSeq = 0L;
         while (true) {
-            List<RuntimeEntryDTO> batch = repository.listCurrentBranchEntries(sessionId, afterSeq, ENTRY_BATCH_SIZE);
+            List<RuntimeEntryDTO> batch =
+                    repository.listTimelineEntries(sessionId, afterSeq, upperBound, ENTRY_BATCH_SIZE);
             entries.addAll(batch);
             if (batch.size() < ENTRY_BATCH_SIZE) {
                 return List.copyOf(entries);

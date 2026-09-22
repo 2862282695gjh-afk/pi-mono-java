@@ -276,7 +276,8 @@ class RuntimeEventProjectorTest {
         RuntimeEntryDTO user = fixture.codec.userEntry(
                 "session-v2", "entry-user", "question", List.of(), OffsetDateTime.parse("2026-09-08T01:00:00Z"));
         user.setEntrySeq(1L);
-        when(fixture.repository.listCurrentBranchEntries("session-v2", 0L, 500)).thenReturn(List.of(user));
+        when(fixture.repository.findTimelineUpperBound("session-v2")).thenReturn(1L);
+        when(fixture.repository.listTimelineEntries("session-v2", 0L, 1L, 500)).thenReturn(List.of(user));
         var result = new SessionCompactionResult(
                 "summary", List.of(new UserMessage("question", 1L)), 0, 120, 30, Usage.empty());
 

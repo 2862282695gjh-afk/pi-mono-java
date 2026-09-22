@@ -28,7 +28,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * 验证压缩持久化端口的分支、分页和受影响行检查；真实事务语义由 openGauss 测试覆盖。
+ * 验证压缩持久化端口的时间线、分页和受影响行检查；真实事务语义由 openGauss 测试覆盖。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/07]
  * @since [br_eCampusCore 26.0.0]
@@ -75,15 +75,17 @@ class MyBatisRuntimeCompactionRepositoryTest {
                 .toList();
         var last = new RuntimeEntryDTO();
         last.setEntrySeq(503L);
-        when(mapper.listCurrentBranchEntries("session", 0L, 500)).thenReturn(first);
-        when(mapper.listCurrentBranchEntries("session", 500L, 500)).thenReturn(List.of(last));
+        when(mapper.findTimelineUpperBound("session")).thenReturn(503L);
+        when(mapper.listTimelineEntries("session", 0L, 503L, 500)).thenReturn(first);
+        when(mapper.listTimelineEntries("session", 500L, 503L, 500)).thenReturn(List.of(last));
         var observed = repository.observeCompaction("session").orElseThrow();
         assertThat(observed.entries()).hasSize(501).endsWith(last);
         assertThat(observed.entries()).extracting(RuntimeEntryDTO::getEntrySeq).isSorted();
         assertThatThrownBy(() -> observed.entries().clear()).isInstanceOf(UnsupportedOperationException.class);
         verify(mapper).lockSessionForUpdate("session");
-        verify(mapper).listCurrentBranchEntries("session", 0L, 500);
-        verify(mapper).listCurrentBranchEntries("session", 500L, 500);
+        verify(mapper).findTimelineUpperBound("session");
+        verify(mapper).listTimelineEntries("session", 0L, 503L, 500);
+        verify(mapper).listTimelineEntries("session", 500L, 503L, 500);
         verify(mapper).findLifetimeUsage("session");
         verifyNoMoreInteractions(mapper);
     }

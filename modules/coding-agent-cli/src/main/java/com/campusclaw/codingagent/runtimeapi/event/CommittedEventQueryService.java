@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * 查询当前 Session 分支的权威公共事件。
+ * 查询 Session 单条时间线的权威公共事件。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

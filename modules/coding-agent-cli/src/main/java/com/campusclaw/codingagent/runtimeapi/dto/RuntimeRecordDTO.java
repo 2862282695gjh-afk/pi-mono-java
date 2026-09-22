@@ -9,7 +9,7 @@ import java.time.OffsetDateTime;
 import lombok.Data;
 
 /**
- * Runtime Session 非分支运行记录的数据库传输对象。
+ * Runtime Session 独立运行记录的数据库传输对象。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/25]
  * @since [br_eCampusCore 26.0.0]

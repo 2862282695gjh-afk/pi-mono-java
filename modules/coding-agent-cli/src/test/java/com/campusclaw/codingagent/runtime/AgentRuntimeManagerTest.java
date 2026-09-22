@@ -225,7 +225,7 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime refreshed = manager.refresh(AGENT_ID);
 
         assertEquals("prompt-v2", manager.readSystemPrompt(refreshed));
-        assertEquals(List.of("Use 2.0.0"), refreshed.metadata().userCases());
+        assertEquals(List.of("Use 2.0.0"), refreshed.metadata().useCases());
         verify(client, times(2)).getAgentRuntime(AGENT_ID);
     }
 
@@ -313,11 +313,11 @@ class AgentRuntimeManagerTest {
 
         PreparedAgentRuntime cached = manager.prepareCached(AGENT_ID);
         assertEquals("prompt-v1", manager.readSystemPrompt(cached));
-        assertEquals(List.of("Use 1.0.0"), cached.metadata().userCases());
+        assertEquals(List.of("Use 1.0.0"), cached.metadata().useCases());
     }
 
     @Test
-    void userCasesSurviveRestartAndRemainOptionalInOldCaches() throws Exception {
+    void useCasesSurviveRestartAndRemainOptionalInOldCaches() throws Exception {
         stubRuntime("1.0.0", "prompt-v1");
         PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
         Path identityFile = prepared.agentRoot().resolve(".campusclaw/agent.json");
@@ -325,7 +325,7 @@ class AgentRuntimeManagerTest {
                 "Use 1.0.0",
                 new ObjectMapper()
                         .readTree(identityFile.toFile())
-                        .path("userCases")
+                        .path("useCases")
                         .get(0)
                         .asText());
         MateServiceClient restartedClient = mock(MateServiceClient.class);
@@ -336,13 +336,13 @@ class AgentRuntimeManagerTest {
 
         assertEquals(
                 List.of("Use 1.0.0"),
-                restarted.prepareCached(AGENT_ID).metadata().userCases());
+                restarted.prepareCached(AGENT_ID).metadata().useCases());
         var identity = new ObjectMapper().readTree(identityFile.toFile());
-        ((com.fasterxml.jackson.databind.node.ObjectNode) identity).remove("userCases");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) identity).remove("useCases");
         new ObjectMapper().writeValue(identityFile.toFile(), identity);
-        assertEquals(List.of(), restarted.prepareCached(AGENT_ID).metadata().userCases());
+        assertEquals(List.of(), restarted.prepareCached(AGENT_ID).metadata().useCases());
         ((com.fasterxml.jackson.databind.node.ObjectNode) identity)
-                .putArray("userCases")
+                .putArray("useCases")
                 .add(1);
         new ObjectMapper().writeValue(identityFile.toFile(), identity);
         assertNull(restarted.prepareCached(AGENT_ID));
@@ -421,7 +421,7 @@ class AgentRuntimeManagerTest {
             assertThrows(TimeoutException.class, () -> cached.get(100L, TimeUnit.MILLISECONDS));
             releaseRefresh.countDown();
             PreparedAgentRuntime prepared = cached.get(2L, TimeUnit.SECONDS);
-            assertEquals(List.of("Use 2.0.0"), prepared.metadata().userCases());
+            assertEquals(List.of("Use 2.0.0"), prepared.metadata().useCases());
             assertTrue(prepared.prompts().basePrompt().startsWith("prompt-v2"));
             assertEquals("# Locked Plan", prepared.prompts().planPrompt());
             assertEquals("# Locked Build", prepared.prompts().buildPrompt());

@@ -232,7 +232,7 @@ class SkillCommandExecutionOpenGaussIT {
         execution.completion().get(5, TimeUnit.SECONDS);
         assertThat(registry.find(session.getId())).isEmpty();
         assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("idle");
-        var entries = repository.listCurrentBranchEntries(session.getId(), 0L, 500);
+        var entries = timelineEntries(repository, session.getId(), 0L, 500);
         assertThat(entries)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("user.message", "assistant.message.completed", "session.status.idle");
@@ -260,8 +260,7 @@ class SkillCommandExecutionOpenGaussIT {
 
     private void assertRestored(String expected) {
         try (var reopened = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class)) {
-            var restored =
-                    reopened.getBean(RuntimeSessionRepository.class).listCurrentBranchEntries(session.getId(), 0L, 500);
+            var restored = timelineEntries(reopened.getBean(RuntimeSessionRepository.class), session.getId(), 0L, 500);
             assertThat(text((UserMessage)
                             codec.toAgentMessages(restored, model()).getFirst()))
                     .isEqualTo(expected + "\n\n[File IDs]\n- file_id: " + FILE_B + "\n- file_id: " + FILE_A);
@@ -291,8 +290,7 @@ class SkillCommandExecutionOpenGaussIT {
                                 () -> service.execute(session.getId(), input, Locale.CHINA, null))
                         .errorCode())
                 .isEqualTo(expected);
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
-                .isEmpty();
+        assertThat(timelineEntries(repository, session.getId(), 0L, 500)).isEmpty();
         assertThat(registry.find(session.getId())).isEmpty();
         assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
                 .isEqualTo(1L);
@@ -313,8 +311,7 @@ class SkillCommandExecutionOpenGaussIT {
         } finally {
             registry.complete(holder, holder.activeExecution().orElseThrow());
         }
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
-                .isEmpty();
+        assertThat(timelineEntries(repository, session.getId(), 0L, 500)).isEmpty();
         verifyNoInteractions(ai);
     }
 
@@ -340,7 +337,7 @@ class SkillCommandExecutionOpenGaussIT {
                         .errorCode())
                 .isEqualTo(RuntimeErrorCode.SESSION_BUSY);
         assertThat(registry.find(session.getId())).isEmpty();
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
+        assertThat(timelineEntries(repository, session.getId(), 0L, 500))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("competitor");
         assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
@@ -456,6 +453,12 @@ class SkillCommandExecutionOpenGaussIT {
         input.setArguments(arguments);
         input.setFileIds(List.of(FILE_B, FILE_A));
         return input;
+    }
+
+    private static List<RuntimeEntryDTO> timelineEntries(
+            RuntimeSessionRepository repository, String sessionId, long afterSeq, int limit) {
+        long upperBound = repository.findTimelineUpperBound(sessionId);
+        return repository.listTimelineEntries(sessionId, afterSeq, upperBound, limit);
     }
 
     private static Model model() {

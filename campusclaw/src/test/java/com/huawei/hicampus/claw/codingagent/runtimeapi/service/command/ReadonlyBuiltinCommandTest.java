@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeException;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
@@ -89,7 +90,7 @@ class ReadonlyBuiltinCommandTest {
         when(metadata.description())
                 .thenReturn(List.of("  Purpose\nline  ", "  "))
                 .thenReturn(null);
-        when(metadata.userCases()).thenReturn(List.of("  Case one  ", "")).thenReturn(null);
+        when(metadata.useCases()).thenReturn(List.of("  Case one  ", "")).thenReturn(null);
         when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(prepared);
 
         assertThat(execute(session("idle"), "help", ""))
@@ -109,6 +110,23 @@ class ReadonlyBuiltinCommandTest {
                 });
         verify(manager).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         verifyNoMoreInteractions(manager);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"idle", "running"})
+    void shouldReportAgentUnavailableWhenPublishedCacheCannotBeRead(String state) {
+        var failure = new AgentRuntimeException("Published Agent settings are invalid");
+        when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenThrow(failure);
+
+        assertThatThrownBy(() -> execute(session(state), "help", ""))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error.status().value()).isEqualTo(422);
+                    assertThat(error.getCause()).isSameAs(failure);
+                });
+        verify(manager).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verifyNoMoreInteractions(manager);
+        verifyNoInteractions(repository);
     }
 
     @ParameterizedTest

@@ -68,15 +68,20 @@ public interface RuntimeSessionMapper {
 
     int markSessionIdle(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
-    List<RuntimeEntryDTO> listCurrentBranchEntries(
-            @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
+    long findTimelineUpperBound(@Param("sessionId") String sessionId);
+
+    List<RuntimeEntryDTO> listTimelineEntries(
+            @Param("sessionId") String sessionId,
+            @Param("afterSeq") long afterSeq,
+            @Param("upperBound") long upperBound,
+            @Param("limit") int limit);
 
     List<CommittedEventDTO> listCommittedEvents(
             @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
 
     CommittedEventDTO findCommittedEvent(@Param("sessionId") String sessionId, @Param("eventId") String eventId);
 
-    long countUnmappedCurrentBranchEntries(@Param("sessionId") String sessionId);
+    long countUnmappedTimelineEntries(@Param("sessionId") String sessionId);
 
     int updateSessionModel(
             @Param("sessionId") String sessionId,
