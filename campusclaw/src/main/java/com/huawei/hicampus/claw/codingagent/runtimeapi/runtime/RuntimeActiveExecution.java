@@ -65,7 +65,7 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     private boolean terminalRetryPending;
 
-    private RuntimeToolPermissionPolicy toolPermissions = RuntimeToolPermissionPolicy.builtInsOnly();
+    private volatile RuntimeToolPermissionPolicy toolPermissions = RuntimeToolPermissionPolicy.builtInsOnly();
 
     private volatile RuntimeToolCallSnapshotResolver toolCallSnapshots = RuntimeToolCallSnapshotResolver.empty();
 
@@ -154,11 +154,11 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         return pending.awaitQuestion(toolCallId, signal);
     }
 
-    public synchronized void bindToolPermissions(RuntimeToolPermissionPolicy value) {
+    public void bindToolPermissions(RuntimeToolPermissionPolicy value) {
         toolPermissions = Objects.requireNonNull(value, "toolPermissions");
     }
 
-    public synchronized RuntimeToolPermissionPolicy.Decision toolPermission(ToolCall call) {
+    public RuntimeToolPermissionPolicy.Decision toolPermission(ToolCall call) {
         return toolPermissions.decide(call);
     }
 
