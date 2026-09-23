@@ -5,8 +5,10 @@
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.campusclaw.agent.tool.BeforeToolCallContext;
@@ -75,6 +77,39 @@ public final class RuntimeToolPermissionPolicy {
         return decision(agentDecisions, invocation.authorizationTargetName(), invocation.authorizationTargetId());
     }
 
+    public static Optional<String> uniqueAllowedToolId(PreparedAgentRuntime runtime, String toolName) {
+        List<BoundTool> matches = matchingBindings(runtime, toolName);
+        BindingDiagnosisDTO diagnosis = diagnoseBinding(matches);
+        if (diagnosis.status() != BindingStatus.BOUND
+                || matches.stream().anyMatch(tool -> parse(tool.permission()) != Decision.ALLOW)) {
+            return Optional.empty();
+        }
+        return Optional.of(diagnosis.toolId());
+    }
+
+    public static BindingDiagnosisDTO diagnoseBinding(PreparedAgentRuntime runtime, String toolName) {
+        return diagnoseBinding(matchingBindings(runtime, toolName));
+    }
+
+    private static List<BoundTool> matchingBindings(PreparedAgentRuntime runtime, String toolName) {
+        return java.util.stream.Stream.concat(
+                        runtime.metadata().bindingTools().stream(),
+                        runtime.skills().stream().flatMap(skill -> skill.bindingTools().stream()))
+                .filter(tool -> java.util.Objects.equals(toolName, tool.name()))
+                .toList();
+    }
+
+    private static BindingDiagnosisDTO diagnoseBinding(List<BoundTool> matches) {
+        if (matches.isEmpty() || matches.stream().anyMatch(tool -> missingId(tool.id()))) {
+            return new BindingDiagnosisDTO(BindingStatus.MISSING, null, matches.size());
+        }
+        String toolId = matches.getFirst().id();
+        if (matches.stream().anyMatch(tool -> !toolId.equals(tool.id()))) {
+            return new BindingDiagnosisDTO(BindingStatus.AMBIGUOUS, null, matches.size());
+        }
+        return new BindingDiagnosisDTO(BindingStatus.BOUND, toolId, matches.size());
+    }
+
     private static Decision decision(Map<String, BindingDecision> decisions, String name) {
         BindingDecision binding = decisions.get(name);
         return binding == null || binding.conflicted() ? Decision.DENY : binding.decision();
@@ -88,14 +123,18 @@ public final class RuntimeToolPermissionPolicy {
         return binding.decision();
     }
 
-    private static void merge(Map<String, BindingDecision> decisions, java.util.List<BoundTool> tools) {
+    private static void merge(Map<String, BindingDecision> decisions, List<BoundTool> tools) {
         for (BoundTool tool : tools) {
             if (tool.name() == null || tool.name().isBlank()) {
                 continue;
             }
-            BindingDecision current = new BindingDecision(tool.id(), parse(tool.permission()), false);
+            BindingDecision current = new BindingDecision(tool.id(), parse(tool.permission()), missingId(tool.id()));
             decisions.merge(tool.name(), current, BindingDecision::merge);
         }
+    }
+
+    private static boolean missingId(String id) {
+        return id == null || id.isBlank();
     }
 
     private static Decision parse(String value) {
@@ -115,6 +154,24 @@ public final class RuntimeToolPermissionPolicy {
         ASK,
         DENY
     }
+
+    /**
+     * 可信工具绑定诊断状态。
+     */
+    public enum BindingStatus {
+        BOUND,
+        MISSING,
+        AMBIGUOUS
+    }
+
+    /**
+     * 工具绑定诊断结果，只携带安全的工具标识和匹配数量。
+     *
+     * @param status 绑定状态
+     * @param toolId 唯一绑定的工具标识
+     * @param matchingCount 同名绑定数量
+     */
+    public record BindingDiagnosisDTO(BindingStatus status, String toolId, int matchingCount) {}
 
     private record BindingDecision(String id, Decision decision, boolean conflicted) {
 

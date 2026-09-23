@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -68,9 +69,17 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.codingagent.test.Log4j2TestAppender;
 import com.campusclaw.codingagent.tool.plan.PlanReviewException;
+import com.campusclaw.codingagent.tool.question.PreparedQuestionInvocation;
+import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
+import com.campusclaw.codingagent.tool.question.UserQuestionException;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -654,8 +663,7 @@ class RuntimeEventProjectorTest {
         fixture.projector.onEvent(new MessageStartEvent(assistant));
         fixture.projector.onEvent(new MessageEndEvent(assistant));
 
-        BeforeToolCallResult result =
-                fixture.execution.beforeToolCall(new BeforeToolCallContext(assistant, call, call.arguments(), null));
+        BeforeToolCallResult result = fixture.execution.beforeToolCall(questionContext(assistant, call));
 
         assertThat(result).isEqualTo(BeforeToolCallResult.allow());
         assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
@@ -672,10 +680,86 @@ class RuntimeEventProjectorTest {
         fixture.execution.cancelQuestion(new IllegalStateException("test complete"));
     }
 
+    @Test
+    void shouldDiagnoseQuestionWithMultipleToolCalls() {
+        Fixture fixture = fixture(false);
+        ToolCall question = questionCall("ask-multiple", "Which details?");
+        AssistantMessage assistant = assistant(List.of(question, new ToolCall("read-1", "Read", Map.of())));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        Logger logger = (Logger) LogManager.getLogger(UserQuestionException.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("question-projector-multiple-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            UserQuestionException failure = assertThrows(
+                    UserQuestionException.class,
+                    () -> fixture.projector.beforeToolCall(questionContext(assistant, question)));
+
+            assertThat(failure.stableErrorCode())
+                    .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_MULTIPLE_TOOL_CALLS_ERROR_CODE);
+            assertThat(logs.events()).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getContextData().<String>getValue("sessionId")).isEqualTo("session-v2");
+                assertThat(event.getContextData().<String>getValue("toolCallId"))
+                        .isEqualTo("ask-multiple");
+                assertThat(event.getContextData().<String>getValue("toolCallCount"))
+                        .isEqualTo("2");
+            });
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void shouldDiagnoseQuestionCallThatWasNotFinalized() {
+        Fixture fixture = fixture(false);
+        ToolCall question = questionCall("ask-unfinalized", "Which details?");
+        AssistantMessage assistant = assistant(List.of(question));
+
+        UserQuestionException failure = assertThrows(
+                UserQuestionException.class,
+                () -> fixture.projector.beforeToolCall(questionContext(assistant, question)));
+
+        assertThat(failure.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_NOT_FINALIZED_ERROR_CODE);
+    }
+
+    @Test
+    void shouldDiagnoseQuestionCallThatDiffersFromFinalizedCall() {
+        Fixture fixture = fixture(false);
+        ToolCall finalized = questionCall("ask-mismatch", "First question");
+        AssistantMessage finalizedAssistant = assistant(List.of(finalized));
+        fixture.projector.onEvent(new MessageStartEvent(finalizedAssistant));
+        fixture.projector.onEvent(new MessageEndEvent(finalizedAssistant));
+        ToolCall changed = questionCall("ask-mismatch", "Changed question");
+        AssistantMessage changedAssistant = assistant(List.of(changed));
+
+        UserQuestionException failure = assertThrows(
+                UserQuestionException.class,
+                () -> fixture.projector.beforeToolCall(questionContext(changedAssistant, changed)));
+
+        assertThat(failure.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE);
+    }
+
     private static void bindAskPermission(RuntimeActiveExecution execution, ToolCall call) {
         RuntimeToolPermissionPolicy policy = mock(RuntimeToolPermissionPolicy.class);
         when(policy.decide(call)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
         execution.bindToolPermissions(policy);
+    }
+
+    private static ToolCall questionCall(String id, String question) {
+        return new ToolCall(
+                id, "AskUserQuestion", Map.of("questions", List.of(Map.of("id", "details", "question", question))));
+    }
+
+    private static BeforeToolCallContext questionContext(AssistantMessage assistant, ToolCall call) {
+        var snapshot = new QuestionRequestParser(new ObjectMapper()).parse(call);
+        PreparedQuestionInvocation invocation = mock(PreparedQuestionInvocation.class);
+        when(invocation.questionRequest()).thenReturn(snapshot);
+        return new BeforeToolCallContext(assistant, call, call.arguments(), null, invocation);
     }
 
     private static CompletableFuture<BeforeToolCallResult> runBeforeHook(

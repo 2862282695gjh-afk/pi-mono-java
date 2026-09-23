@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -25,6 +26,7 @@ import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewPort;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewResultDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.PreparedQuestionInvocation;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
@@ -54,6 +56,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
     private Future<?> timeoutTask;
 
     private String runId;
+
+    private String agentId;
 
     private ExecutionTargetDTO target;
 
@@ -94,6 +98,13 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     public synchronized void installModeApplier(Runnable value) {
         modeApplier = Objects.requireNonNull(value, "modeApplier");
+    }
+
+    public synchronized void bindAgentId(String value) {
+        if (agentId != null) {
+            throw new IllegalStateException("execution agent id is already assigned");
+        }
+        agentId = requireText(value, "agentId");
     }
 
     public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(PlanProposalSnapshotDTO proposal) {
@@ -173,6 +184,9 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
             return requireConfirmationHandler().handle(context);
         }
         RuntimeToolPermissionPolicy.Decision decision = toolPermissions.decide(context);
+        if (context.preparedInvocation() instanceof PreparedQuestionInvocation) {
+            return authorizePreparedQuestion(context, decision);
+        }
         if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
             return BeforeToolCallResult.allow();
         }
@@ -181,6 +195,30 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         }
         BeforeToolCallHandler handler = requireConfirmationHandler();
         return handler.handle(context);
+    }
+
+    private BeforeToolCallResult authorizePreparedQuestion(
+            BeforeToolCallContext context, RuntimeToolPermissionPolicy.Decision decision) throws Exception {
+        if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
+            return requireConfirmationHandler().handle(context);
+        }
+        String errorCode = decision == RuntimeToolPermissionPolicy.Decision.ASK
+                ? ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_REQUIRED_ERROR_CODE
+                : ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_DENIED_ERROR_CODE;
+        throw questionAuthorizationFailure(context, decision, errorCode);
+    }
+
+    private synchronized UserQuestionException questionAuthorizationFailure(
+            BeforeToolCallContext context, RuntimeToolPermissionPolicy.Decision decision, String errorCode) {
+        var invocation = context.preparedInvocation();
+        Map<String, Object> diagnostics = new java.util.LinkedHashMap<>();
+        diagnostics.put("sessionId", target == null ? "<missing>" : target.sessionId());
+        diagnostics.put("agentId", agentId == null ? "<missing>" : agentId);
+        diagnostics.put("toolCallId", String.valueOf(context.toolCall().id()));
+        diagnostics.put("toolName", String.valueOf(invocation.authorizationTargetName()));
+        diagnostics.put("toolId", String.valueOf(invocation.authorizationTargetId()));
+        diagnostics.put("permission", decision.name());
+        return UserQuestionException.failure(errorCode, "runtime.question.authorize", diagnostics, null);
     }
 
     public synchronized CompletableFuture<ToolConfirmationDecisionDTO> beginToolConfirmation(String toolCallId) {

@@ -61,7 +61,11 @@ public class UnavailableBuiltInTool implements AgentTool {
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate) {
         if (name == BuiltInToolName.ASK_USER_QUESTION) {
-            throw new UserQuestionException(ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+            throw UserQuestionException.failure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_ENTRY_UNSUPPORTED_ERROR_CODE,
+                    "tool.question.unavailable.execute",
+                    Map.of("toolCallId", String.valueOf(toolCallId), "toolName", name.externalName()),
+                    null);
         }
         throw new IllegalStateException(name.externalName() + " is unavailable in the current execution context");
     }

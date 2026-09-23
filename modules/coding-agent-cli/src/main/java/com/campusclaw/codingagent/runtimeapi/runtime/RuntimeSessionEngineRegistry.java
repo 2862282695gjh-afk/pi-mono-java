@@ -178,7 +178,9 @@ public class RuntimeSessionEngineRegistry {
         ManagedAgentSession session =
                 createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
         try {
-            execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
+            RuntimeToolPermissionPolicy permissions = RuntimeToolPermissionPolicy.from(session.runtime());
+            execution.bindAgentId(snapshot.agentId());
+            execution.bindToolPermissions(permissions);
             execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(session.runtime(), session.tools()));
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
@@ -225,7 +227,8 @@ public class RuntimeSessionEngineRegistry {
                 List.of(),
                 execution.mode(),
                 (runtime, ignored) -> new com.campusclaw.codingagent.tool.plan.ExitPlanModeTool(execution),
-                (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution));
+                (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution),
+                execution);
         return sessionFactory.create(request);
     }
 

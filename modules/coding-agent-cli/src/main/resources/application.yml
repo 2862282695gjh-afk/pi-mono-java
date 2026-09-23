@@ -38,6 +38,7 @@ server:
 
 campusclaw:
   tools:
+    # 默认使用业务确认；需要内置提问时，在 runtime 清单中加入 AskUserQuestion。
     runtime:
       - Read
       - Find
@@ -50,7 +51,6 @@ campusclaw:
       - Agent
       - ExitPlanMode
       - TodoUpdate
-      - AskUserQuestion
     cron:
       - Read
       - Find

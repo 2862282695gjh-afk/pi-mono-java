@@ -21,6 +21,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy.BindingStatus;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,11 +32,13 @@ import org.junit.jupiter.api.Test;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeToolPermissionPolicyTest {
+    private static final String TOOL_ID = "tool-11111111111111111111111111111111";
+
     @Test
     void shouldResolveAgentAndSkillPermissionFromTheirOwnTrustedScopes() {
         PreparedAgentRuntime runtime = runtime(
-                List.of(tool("read_ports", "allow"), tool("isolate_port", "ask")),
-                List.of(tool("delete_route", "deny")));
+                List.of(tool("read_ports", "read-id", "allow"), tool("isolate_port", "isolate-id", "ask")),
+                List.of(tool("delete_route", "delete-id", "deny")));
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
 
         assertThat(policy.decide(agentCall("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
@@ -50,50 +53,141 @@ class RuntimeToolPermissionPolicyTest {
 
     @Test
     void shouldKeepOverlappingAgentAndSkillPermissionsIndependent() {
-        PreparedAgentRuntime runtime = runtime(List.of(tool("shared", "allow")), List.of(tool("shared", "ask")));
-
+        PreparedAgentRuntime runtime =
+                runtime(List.of(tool("shared", TOOL_ID, "allow")), List.of(tool("shared", TOOL_ID, "ask")));
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
 
         assertThat(policy.decide(agentCall("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
         assertThat(policy.decide(callTool("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "shared")
+                        .status())
+                .isEqualTo(BindingStatus.BOUND);
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "shared"))
+                .isEmpty();
     }
 
     @Test
-    void shouldDenyConflictingPermissionsWithinOneScope() {
-        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "allow"), tool("shared", "ask")));
+    void shouldDenyConflictsAndMissingIdentityWithinOneScope() {
+        PreparedAgentRuntime runtime = runtime(
+                List.of(tool("missing_agent", "", "allow")),
+                List.of(
+                        tool("shared", TOOL_ID, "allow"),
+                        tool("shared", TOOL_ID, "ask"),
+                        tool("missing_skill", null, "allow")));
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
 
-        assertThat(RuntimeToolPermissionPolicy.from(runtime).decide(callTool("shared")))
-                .isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("missing_agent"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(callTool("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(callTool("missing_skill"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
     @Test
-    void shouldAuthorizePreparedTargetIdentityInsteadOfMutableOuterArguments() {
-        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "ask")));
+    void shouldAuthorizePreparedSkillTargetIdentityInsteadOfMutableOuterArguments() {
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", TOOL_ID, "ask")));
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
         ToolCall outerCall = callTool("other");
-        String trustedId = "tool-11111111111111111111111111111111";
-        BeforeToolCallContext trusted = new BeforeToolCallContext(
-                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", trustedId));
-        BeforeToolCallContext wrongId = new BeforeToolCallContext(
-                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", "tool-wrong"));
+        BeforeToolCallContext trusted = context(outerCall, new PermissionInvocation("CallTool", "shared", TOOL_ID));
+        BeforeToolCallContext wrongId =
+                context(outerCall, new PermissionInvocation("CallTool", "shared", "tool-wrong"));
 
         assertThat(policy.decide(trusted)).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
         assertThat(policy.decide(wrongId)).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
+    @Test
+    void shouldAuthorizePreparedAgentTargetInAgentScopeOnly() {
+        PreparedAgentRuntime runtime =
+                runtime(List.of(tool("shared", TOOL_ID, "allow")), List.of(tool("shared", TOOL_ID, "deny")));
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+        ToolCall outerCall = agentCall("shared");
+        BeforeToolCallContext trusted = context(outerCall, new PermissionInvocation("shared", "shared", TOOL_ID));
+        BeforeToolCallContext wrongId = context(outerCall, new PermissionInvocation("shared", "shared", "tool-wrong"));
+
+        assertThat(policy.decide(trusted)).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        assertThat(policy.decide(wrongId)).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+    }
+
+    @Test
+    void shouldDiagnoseMissingBlankUniqueAndAmbiguousBindings() {
+        PreparedAgentRuntime missing = runtime(List.of(), List.of(tool("other", "other-id", "allow")));
+        PreparedAgentRuntime blank = runtime(List.of(tool("target", " ", "allow")), List.of());
+        PreparedAgentRuntime unique = runtime(List.of(tool("target", "target-id", "allow")), List.of());
+        PreparedAgentRuntime ambiguous =
+                runtime(List.of(tool("target", "first-id", "allow")), List.of(tool("target", "second-id", "allow")));
+
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(missing, "target"))
+                .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.MISSING, null, 0));
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(blank, "target"))
+                .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.MISSING, null, 1));
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(unique, "target"))
+                .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.BOUND, "target-id", 1));
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(ambiguous, "target"))
+                .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.AMBIGUOUS, null, 2));
+    }
+
+    @Test
+    void shouldAllowSameToolIdentityAcrossAgentAndSkills() {
+        PreparedAgentRuntime runtime = runtimeWithSkills(
+                List.of(tool("business_question", "confirm-id", "allow")),
+                List.of(
+                        List.of(tool("business_question", "confirm-id", "allow")),
+                        List.of(tool("business_question", "confirm-id", "allow"))));
+
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "business_question"))
+                .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.BOUND, "confirm-id", 3));
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "business_question"))
+                .contains("confirm-id");
+    }
+
+    @Test
+    void uniqueAllowedToolIdShouldRejectInvalidIdentityAndPermission() {
+        PreparedAgentRuntime denied = runtime(List.of(tool("target", "target-id", "deny")), List.of());
+        PreparedAgentRuntime asked = runtime(List.of(tool("target", "target-id", "ask")), List.of());
+        PreparedAgentRuntime conflictingPermissions =
+                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "target-id", "ask")));
+        PreparedAgentRuntime conflictingIdentities =
+                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "other-id", "allow")));
+        PreparedAgentRuntime missingId = runtime(List.of(tool("target", "", "allow")), List.of());
+
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(denied, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(asked, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflictingPermissions, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflictingIdentities, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(missingId, "target"))
+                .isEmpty();
+    }
+
     private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        return runtimeWithSkills(agentTools, List.of(skillTools));
+    }
+
+    private static PreparedAgentRuntime runtimeWithSkills(
+            List<BoundTool> agentTools, List<List<BoundTool>> skillTools) {
         PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
         AgentRuntime metadata = mock(AgentRuntime.class);
-        SkillInfo skill = mock(SkillInfo.class);
+        List<SkillInfo> skills = skillTools.stream()
+                .map(tools -> {
+                    SkillInfo skill = mock(SkillInfo.class);
+                    when(skill.bindingTools()).thenReturn(tools);
+                    return skill;
+                })
+                .toList();
         when(metadata.bindingTools()).thenReturn(agentTools);
-        when(skill.bindingTools()).thenReturn(skillTools);
         when(runtime.metadata()).thenReturn(metadata);
-        when(runtime.skills()).thenReturn(List.of(skill));
+        when(runtime.skills()).thenReturn(skills);
         return runtime;
     }
 
     private static BoundTool tool(String name, String permission) {
-        return new BoundTool(null, null, "tool-11111111111111111111111111111111", null, name, permission, null, null);
+        return tool(name, TOOL_ID, permission);
+    }
+
+    private static BoundTool tool(String name, String id, String permission) {
+        return new BoundTool(null, null, id, null, name, permission, null, null);
     }
 
     private static ToolCall callTool(String tool) {
@@ -104,7 +198,11 @@ class RuntimeToolPermissionPolicyTest {
         return new ToolCall("call-id", tool, Map.of());
     }
 
-    private record PermissionInvocation(String authorizationTargetName, String authorizationTargetId)
+    private static BeforeToolCallContext context(ToolCall call, PreparedToolInvocation invocation) {
+        return new BeforeToolCallContext(null, call, call.arguments(), null, invocation);
+    }
+
+    private record PermissionInvocation(String toolName, String authorizationTargetName, String authorizationTargetId)
             implements PreparedToolInvocation {
 
         @Override
@@ -113,13 +211,8 @@ class RuntimeToolPermissionPolicyTest {
         }
 
         @Override
-        public String toolName() {
-            return "CallTool";
-        }
-
-        @Override
         public Map<String, Object> arguments() {
-            return Map.of("tool", authorizationTargetName, "args", Map.of());
+            return Map.of();
         }
 
         @Override

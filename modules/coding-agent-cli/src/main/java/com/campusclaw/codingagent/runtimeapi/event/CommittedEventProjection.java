@@ -228,6 +228,9 @@ public class CommittedEventProjection {
     }
 
     private AgentQuestionResponseVO projectQuestion(JsonNode payload) {
+        if (payload.has("label")) {
+            return projectBusinessConfirmationQuestion(payload);
+        }
         requireFields(payload, Set.of("sourceEventId", "toolCallId", "questions"));
         Map<String, Object> arguments = Map.of(
                 "questions",
@@ -236,7 +239,24 @@ public class CommittedEventProjection {
         List<QuestionResponseVO> questions =
                 snapshot.questions().stream().map(this::projectQuestionItem).toList();
         return new AgentQuestionResponseVO(
-                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), questions);
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), questions, null, null);
+    }
+
+    private AgentQuestionResponseVO projectBusinessConfirmationQuestion(JsonNode payload) {
+        Set<String> fields = payload.has("context")
+                ? Set.of("sourceEventId", "toolCallId", "label", "context")
+                : Set.of("sourceEventId", "toolCallId", "label");
+        requireFields(payload, fields);
+        JsonNode context = payload.get("context");
+        if (context != null && !context.isObject()) {
+            throw invalid(null);
+        }
+        return new AgentQuestionResponseVO(
+                requiredText(payload, "sourceEventId"),
+                requiredText(payload, "toolCallId"),
+                null,
+                requiredString(payload, "label"),
+                context);
     }
 
     private QuestionResponseVO projectQuestionItem(QuestionDTO question) {

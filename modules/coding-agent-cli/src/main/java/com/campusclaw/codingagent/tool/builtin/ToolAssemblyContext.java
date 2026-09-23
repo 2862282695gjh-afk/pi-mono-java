@@ -30,7 +30,6 @@ import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
  * @param agentToolFactory 当前父 Session 的 Agent 工具工厂
  * @param exitPlanModeToolFactory 当前 Runtime 的计划审核工具工厂
  * @param askUserQuestionToolFactory 当前 Runtime 的用户提问工具工厂
- *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
  */

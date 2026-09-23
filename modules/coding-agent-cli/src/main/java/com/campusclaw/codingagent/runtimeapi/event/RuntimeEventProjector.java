@@ -51,7 +51,8 @@ import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThin
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
-import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
+import com.campusclaw.codingagent.tool.question.PreparedQuestionInvocation;
+import com.campusclaw.codingagent.tool.question.UserQuestionException;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
@@ -102,8 +103,6 @@ public class RuntimeEventProjector {
 
     private final RuntimeTodoEventMapper todoMapper;
 
-    private final QuestionRequestParser questionParser;
-
     private final PlanProposalBinder planBinder = new PlanProposalBinder();
 
     private final Map<Integer, String> thinkingEntryIds = new LinkedHashMap<>();
@@ -147,44 +146,6 @@ public class RuntimeEventProjector {
             boolean thinking,
             Locale locale,
             RuntimeTodoEventMapper todoMapper) {
-        this(
-                sessionId,
-                sourceEventId,
-                repository,
-                persistence,
-                codec,
-                ids,
-                events,
-                encoder,
-                clock,
-                maxCommittedEventBytes,
-                abort,
-                execution,
-                initialUserMessage,
-                thinking,
-                locale,
-                todoMapper,
-                new QuestionRequestParser(new com.fasterxml.jackson.databind.ObjectMapper()));
-    }
-
-    public RuntimeEventProjector(
-            String sessionId,
-            String sourceEventId,
-            RuntimeSessionRepository repository,
-            RuntimeExecutionPersistenceService persistence,
-            RuntimeEntryCodec codec,
-            RuntimeEntryIdGenerator ids,
-            RuntimeCommittedEventFactory events,
-            RuntimeEventEncoder encoder,
-            Clock clock,
-            long maxCommittedEventBytes,
-            Runnable abort,
-            RuntimeActiveExecution execution,
-            UserMessage initialUserMessage,
-            boolean thinking,
-            Locale locale,
-            RuntimeTodoEventMapper todoMapper,
-            QuestionRequestParser questionParser) {
         this.sessionId = sessionId;
         this.sourceEventId = sourceEventId;
         this.repository = repository;
@@ -201,7 +162,6 @@ public class RuntimeEventProjector {
         this.thinking = thinking;
         this.locale = locale;
         this.todoMapper = todoMapper;
-        this.questionParser = questionParser;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -238,7 +198,11 @@ public class RuntimeEventProjector {
         if (BuiltInToolName.ASK_USER_QUESTION
                 .externalName()
                 .equals(context.toolCall().name())) {
-            beginQuestion(context);
+            beginPreparedQuestion(context);
+            return BeforeToolCallResult.allow();
+        }
+        if (context.preparedInvocation() instanceof PreparedQuestionInvocation) {
+            beginPreparedQuestion(context);
             return BeforeToolCallResult.allow();
         }
         var pending = beginConfirmation(context.toolCall());
@@ -631,9 +595,16 @@ public class RuntimeEventProjector {
                 context);
     }
 
-    private void beginQuestion(BeforeToolCallContext context) {
+    private void beginPreparedQuestion(BeforeToolCallContext context) {
         ToolCall call = requireUniqueFinalizedCall(context);
-        var snapshot = questionParser.parse(call);
+        if (!(context.preparedInvocation() instanceof PreparedQuestionInvocation question)) {
+            throw questionCallFailure(ClawConstants.RuntimeApi.USER_QUESTION_NOT_PREPARED_ERROR_CODE, call.id(), 1L);
+        }
+        beginQuestion(call, question.questionRequest());
+    }
+
+    private void beginQuestion(
+            ToolCall call, com.campusclaw.codingagent.tool.question.QuestionRequestSnapshotDTO snapshot) {
         OffsetDateTime confirmingAt = now();
         RuntimeEntryDTO question = codec.questionEntry(sessionId, ids.nextId(), call.id(), snapshot, confirmingAt);
         CommittedEventDTO questionEvent =
@@ -657,15 +628,37 @@ public class RuntimeEventProjector {
 
     private ToolCall requireUniqueFinalizedCall(BeforeToolCallContext context) {
         ToolCall call = context.toolCall();
-        ToolCall finalized = finalizedToolCalls.get(call.id());
         long toolCallCount = context.assistantMessage().content().stream()
                 .filter(ToolCall.class::isInstance)
                 .count();
-        if (finalized == null || !finalized.equals(call) || toolCallCount != 1) {
-            throw new com.campusclaw.codingagent.tool.question.UserQuestionException(
-                    ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+        if (toolCallCount != 1) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_MULTIPLE_TOOL_CALLS_ERROR_CODE, call.id(), toolCallCount);
+        }
+        ToolCall finalized = finalizedToolCalls.get(call.id());
+        if (finalized == null) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_CALL_NOT_FINALIZED_ERROR_CODE, call.id(), toolCallCount);
+        }
+        if (!finalized.equals(call)) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE, call.id(), toolCallCount);
         }
         return finalized;
+    }
+
+    private UserQuestionException questionCallFailure(String errorCode, String toolCallId, long toolCallCount) {
+        return UserQuestionException.failure(
+                errorCode,
+                "runtime.question.project",
+                Map.of(
+                        "sessionId",
+                        String.valueOf(sessionId),
+                        "toolCallId",
+                        String.valueOf(toolCallId),
+                        "toolCallCount",
+                        toolCallCount),
+                null);
     }
 
     private static void requireEmptyPlanArguments(ToolCall call) {

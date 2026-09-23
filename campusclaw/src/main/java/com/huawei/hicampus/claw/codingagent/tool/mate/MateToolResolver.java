@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.huawei.hicampus.claw.agent.error.StableErrorCode;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -19,10 +20,15 @@ import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 在单个 Session 内按可信 Agent 与 Skill 工具关联解析定义，关联不代替调用授权。
  */
 final class MateToolResolver {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateToolResolver.class);
 
     private final MateToolClient client;
 
@@ -95,7 +101,12 @@ final class MateToolResolver {
         if (agentBindings.isEmpty()) {
             return List.of();
         }
-        List<MateToolMeta> metadata = client.listAgentTools(agentId);
+        List<MateToolMeta> metadata;
+        try {
+            metadata = client.listAgentTools(agentId);
+        } catch (RuntimeException error) {
+            throw discoveryFailure("mate.tool.listAgentTools", "agentId", agentId, "Agent tools", error);
+        }
         List<ResolvedTool> resolved = new ArrayList<>();
         for (TrustedBinding binding : agentBindings.values()) {
             ResolvedTool observed = resolveMetadata(binding, metadata, isDisclosable(binding.name()));
@@ -131,7 +142,12 @@ final class MateToolResolver {
             return resolved(binding, cached, isDisclosable(binding.name()));
         }
         for (String skillId : binding.skillIds()) {
-            List<MateToolMeta> metadata = client.listSkillTools(skillId);
+            List<MateToolMeta> metadata;
+            try {
+                metadata = client.listSkillTools(skillId);
+            } catch (RuntimeException error) {
+                throw discoveryFailure("mate.tool.listSkillTools", "skillId", skillId, binding.name(), error);
+            }
             MateToolMeta match = findMetadata(binding, metadata);
             if (match != null) {
                 MateToolMeta canonical = metadataById.putIfAbsent(binding.id(), match);
@@ -252,7 +268,36 @@ final class MateToolResolver {
     }
 
     private static ResolutionException failure(String name, ResolutionFailure reason, String detail) {
-        return new ResolutionException(name, reason, detail);
+        return failure(name, reason, detail, null);
+    }
+
+    private static ResolutionException failure(
+            String name, ResolutionFailure reason, String detail, RuntimeException cause) {
+        String errorCode = reason.stableErrorCode();
+        LOGGER.atError()
+                .addKeyValue("operation", "mate.tool.resolve")
+                .addKeyValue("errorCode", errorCode)
+                .addKeyValue("resolutionReason", reason.name())
+                .addKeyValue("toolName", name)
+                .addKeyValue("detail", detail)
+                .setCause(cause)
+                .log("Failed to resolve managed business tool");
+        return new ResolutionException(name, reason, detail, cause);
+    }
+
+    private static ResolutionException discoveryFailure(
+            String operation, String scopeField, String scopeId, String name, RuntimeException cause) {
+        ResolutionFailure reason = ResolutionFailure.METADATA_UNAVAILABLE;
+        String detail = "business tool discovery failed";
+        LOGGER.atError()
+                .addKeyValue("operation", operation)
+                .addKeyValue("errorCode", reason.stableErrorCode())
+                .addKeyValue("resolutionReason", reason.name())
+                .addKeyValue(scopeField, scopeId)
+                .addKeyValue("detail", detail)
+                .setCause(cause)
+                .log("Failed to discover managed business tools");
+        return new ResolutionException(name, reason, detail, cause);
     }
 
     enum ResolutionFailure {
@@ -260,20 +305,37 @@ final class MateToolResolver {
         METADATA_UNAVAILABLE,
         SCHEMA_UNAVAILABLE,
         INVALID_BINDING,
-        CONFLICT
+        CONFLICT;
+
+        private String stableErrorCode() {
+            return switch (this) {
+                case NAME_UNAVAILABLE -> ClawConstants.RuntimeApi.TOOL_NOT_FOUND_ERROR_CODE;
+                case CONFLICT -> ClawConstants.RuntimeApi.TOOL_DEFINITION_CONFLICT_ERROR_CODE;
+                case METADATA_UNAVAILABLE, SCHEMA_UNAVAILABLE, INVALID_BINDING ->
+                    ClawConstants.RuntimeApi.TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE;
+            };
+        }
     }
 
-    static final class ResolutionException extends MateToolExecutionException {
+    static final class ResolutionException extends MateToolExecutionException implements StableErrorCode {
 
         private final ResolutionFailure reason;
 
-        private ResolutionException(String name, ResolutionFailure reason, String detail) {
+        private ResolutionException(String name, ResolutionFailure reason, String detail, RuntimeException cause) {
             super(name, detail);
             this.reason = reason;
+            if (cause != null) {
+                initCause(cause);
+            }
         }
 
         ResolutionFailure reason() {
             return reason;
+        }
+
+        @Override
+        public String stableErrorCode() {
+            return reason.stableErrorCode();
         }
     }
 

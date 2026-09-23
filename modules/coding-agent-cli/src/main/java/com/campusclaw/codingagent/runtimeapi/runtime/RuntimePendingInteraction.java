@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -61,6 +62,8 @@ public class RuntimePendingInteraction {
 
     private CompletableFuture<?> future;
 
+    private boolean claimed;
+
     private ExecutionTargetDTO continuationTarget;
 
     private RuntimeEventOutput continuationOutput;
@@ -68,7 +71,7 @@ public class RuntimePendingInteraction {
     private ExecutionTargetDTO waitingTarget;
 
     public synchronized CompletableFuture<ToolConfirmationDecisionDTO> beginTool(String callId) {
-        requireAvailable();
+        requireAvailable(Kind.TOOL_PERMISSION, callId, null);
         kind = Kind.TOOL_PERMISSION;
         toolCallId = requireText(callId, "toolCallId");
         var created = new CompletableFuture<ToolConfirmationDecisionDTO>();
@@ -77,8 +80,8 @@ public class RuntimePendingInteraction {
     }
 
     public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlan(PlanProposalSnapshotDTO proposal) {
-        requireAvailable();
         java.util.Objects.requireNonNull(proposal, "proposal");
+        requireAvailable(Kind.PLAN_REVIEW, proposal.toolCallId(), proposal.planEventId());
         kind = Kind.PLAN_REVIEW;
         toolCallId = requireText(proposal.toolCallId(), "toolCallId");
         targetEventId = requireText(proposal.planEventId(), "planEventId");
@@ -91,7 +94,7 @@ public class RuntimePendingInteraction {
 
     public synchronized CompletableFuture<QuestionAnswerDecisionDTO> beginQuestion(
             String callId, String eventId, QuestionRequestSnapshotDTO snapshot) {
-        requireAvailable();
+        requireAvailable(Kind.USER_QUESTION, callId, eventId);
         kind = Kind.USER_QUESTION;
         toolCallId = requireText(callId, "toolCallId");
         targetEventId = requireText(eventId, "questionEventId");
@@ -109,26 +112,31 @@ public class RuntimePendingInteraction {
             }
             waiting = castFuture();
         }
-        signal.onCancel(() -> waiting.completeExceptionally(
-                new java.util.concurrent.CancellationException("Plan review was cancelled")));
-        PlanReviewDecisionDTO decision = waiting.get();
-        clearIfSame(waiting);
-        return decision;
+        signal.onCancel(() ->
+                cancelIfSame(waiting, new java.util.concurrent.CancellationException("Plan review was cancelled")));
+        try {
+            return waiting.get();
+        } finally {
+            clearIfSame(waiting);
+        }
     }
 
     public QuestionAnswerResultDTO awaitQuestion(String callId, CancellationToken signal) throws Exception {
         CompletableFuture<QuestionAnswerDecisionDTO> waiting;
         synchronized (this) {
             if (!matchesCall(Kind.USER_QUESTION, callId)) {
-                throw unavailable();
+                throw waitMissing(callId);
             }
             waiting = castFuture();
         }
-        signal.onCancel(() -> waiting.completeExceptionally(
-                new java.util.concurrent.CancellationException("User question was cancelled")));
-        QuestionAnswerDecisionDTO decision = waiting.get();
-        clearIfSame(waiting);
-        return java.util.Objects.requireNonNull(decision.getAnswers(), "question answers");
+        signal.onCancel(() ->
+                cancelIfSame(waiting, new java.util.concurrent.CancellationException("User question was cancelled")));
+        try {
+            QuestionAnswerDecisionDTO decision = waiting.get();
+            return java.util.Objects.requireNonNull(decision.getAnswers(), "question answers");
+        } finally {
+            clearIfSame(waiting);
+        }
     }
 
     public synchronized boolean stage(
@@ -214,15 +222,16 @@ public class RuntimePendingInteraction {
             if (!matchesTarget(current, expected, identity)) {
                 return Optional.empty();
             }
-            Optional<T> claimed = java.util.Objects.requireNonNull(supplier.get(), "claimed interaction");
-            if (claimed.isEmpty()) {
+            Optional<T> claimedDecision = java.util.Objects.requireNonNull(supplier.get(), "claimed interaction");
+            if (claimedDecision.isEmpty()) {
                 return Optional.empty();
             }
-            decision = claimed.get();
+            decision = claimedDecision.get();
             if (!validator.test(decision)) {
                 throw new IllegalStateException("claimed interaction does not match the pending target");
             }
             waiting = castFuture();
+            this.claimed = true;
         }
         return Optional.of(new Claimed<>(decision, waiting));
     }
@@ -266,7 +275,12 @@ public class RuntimePendingInteraction {
 
     private synchronized boolean matchesIdentity(Kind expected, String identity) {
         String pendingIdentity = expected == Kind.TOOL_PERMISSION ? toolCallId : targetEventId;
-        return kind == expected && future != null && pendingIdentity != null && pendingIdentity.equals(identity);
+        return kind == expected
+                && future != null
+                && !future.isDone()
+                && !claimed
+                && pendingIdentity != null
+                && pendingIdentity.equals(identity);
     }
 
     private synchronized boolean matchesCall(Kind expected, String callId) {
@@ -287,14 +301,26 @@ public class RuntimePendingInteraction {
         }
     }
 
+    private synchronized void cancelIfSame(CompletableFuture<?> waiting, RuntimeException failure) {
+        if (future != waiting || claimed) {
+            return;
+        }
+        clear();
+        waiting.completeExceptionally(failure);
+    }
+
     @SuppressWarnings("unchecked")
     private <T> CompletableFuture<T> castFuture() {
         return (CompletableFuture<T>) future;
     }
 
-    private void requireAvailable() {
+    private void requireAvailable(Kind requestedKind, String requestedToolCallId, String requestedTargetEventId) {
         if (future != null) {
-            throw unavailable();
+            throw UserQuestionException.failure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_PENDING_CONFLICT_ERROR_CODE,
+                    "runtime.interaction.begin",
+                    pendingContext(requestedKind, requestedToolCallId, requestedTargetEventId),
+                    null);
         }
     }
 
@@ -305,12 +331,33 @@ public class RuntimePendingInteraction {
         plan = null;
         question = null;
         future = null;
+        claimed = false;
         waitingTarget = null;
         clearContinuation();
     }
 
-    private static UserQuestionException unavailable() {
-        return new UserQuestionException(ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+    private UserQuestionException waitMissing(String requestedToolCallId) {
+        return UserQuestionException.failure(
+                ClawConstants.RuntimeApi.USER_QUESTION_WAIT_MISSING_ERROR_CODE,
+                "runtime.question.await",
+                pendingContext(Kind.USER_QUESTION, requestedToolCallId, null),
+                null);
+    }
+
+    private Map<String, Object> pendingContext(
+            Kind requestedKind, String requestedToolCallId, String requestedTargetEventId) {
+        Map<String, Object> context = new java.util.LinkedHashMap<>();
+        context.put("requestedKind", diagnosticValue(requestedKind));
+        context.put("requestedToolCallId", diagnosticValue(requestedToolCallId));
+        context.put("requestedTargetEventId", diagnosticValue(requestedTargetEventId));
+        context.put("existingKind", diagnosticValue(kind));
+        context.put("existingToolCallId", diagnosticValue(toolCallId));
+        context.put("existingTargetEventId", diagnosticValue(targetEventId));
+        return context;
+    }
+
+    private static String diagnosticValue(Object value) {
+        return value == null ? "<missing>" : value.toString();
     }
 
     private static String requireText(String value, String name) {

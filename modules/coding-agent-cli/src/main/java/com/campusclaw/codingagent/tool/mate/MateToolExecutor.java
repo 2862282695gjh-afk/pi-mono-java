@@ -7,19 +7,19 @@ package com.campusclaw.codingagent.tool.mate;
 import java.util.List;
 import java.util.Map;
 
+import com.campusclaw.agent.error.StableErrorCode;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
-import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.PreparedToolInvocation;
 import com.campusclaw.agent.tool.ToolArgumentsInvalidException;
 import com.campusclaw.agent.tool.ToolSchemaInvalidException;
 import com.campusclaw.agent.tool.ToolSchemaValidator;
-import com.campusclaw.ai.types.ContentBlock;
-import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.mate.MateToolResolver.ResolvedTool;
+import com.campusclaw.codingagent.tool.question.UserQuestionPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchemaFactory;
@@ -42,16 +42,22 @@ public class MateToolExecutor {
 
     private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
 
-    private final MateToolClient client;
-
-    private final MateCredentials credentials;
-
     private final MateToolResolver resolver;
 
+    private final BusinessToolHandler remoteHandler;
+
+    private BusinessToolDispatcher dispatcher;
+
     MateToolExecutor(MateToolClient client, MateCredentials credentials, MateToolResolver resolver) {
-        this.client = client;
-        this.credentials = credentials;
         this.resolver = resolver;
+        this.remoteHandler = new MateRemoteToolHandler(client, credentials);
+    }
+
+    synchronized void bindBusinessConfirmation(ToolEntryPoint entryPoint, UserQuestionPort questions) {
+        if (dispatcher != null) {
+            throw new IllegalStateException("business confirmation is already bound");
+        }
+        dispatcher = BusinessToolDispatcher.assembled(entryPoint, questions, remoteHandler);
     }
 
     public List<AgentTool> createAgentToolAdapters() {
@@ -110,27 +116,26 @@ public class MateToolExecutor {
             Map<String, Object> args,
             Map<String, Object> invocationArguments) {
         Map<String, Object> businessArguments = PreparedToolInvocation.snapshotArguments(args);
-        return new PreparedMateToolInvocation(
-                this,
+        BusinessToolHandler.InvocationDTO invocation = new BusinessToolHandler.InvocationDTO(
                 toolCallId,
                 invocationName,
                 PreparedToolInvocation.snapshotArguments(invocationArguments),
                 tool.binding().id(),
                 tool.binding().name(),
                 tool.binding().version(),
-                inputSchema.deepCopy(),
+                tool.metadata().description(),
+                inputSchema,
+                tool.disclosable(),
                 businessArguments);
+        BusinessToolHandler handler = dispatcher().select(tool.binding().name());
+        return handler.prepare(invocation);
     }
 
-    private AgentToolResult executePrepared(
-            String targetId, String targetName, Map<String, Object> args, CancellationToken signal) throws Exception {
-        ensureNotCancelled(signal);
-        MateToolClient.ToolResult result = client.callTool(targetId, args, credentials);
-        if (result.isError()) {
-            throw new MateToolExecutionException(targetName, result.content());
+    private synchronized BusinessToolDispatcher dispatcher() {
+        if (dispatcher == null) {
+            dispatcher = BusinessToolDispatcher.unbound(remoteHandler);
         }
-        String content = result.content() == null ? "" : result.content();
-        return new AgentToolResult(List.<ContentBlock>of(new TextContent(content)), result.metadata());
+        return dispatcher;
     }
 
     private void validateArguments(ResolvedTool tool, JsonNode inputSchema, Map<String, Object> args) {
@@ -156,11 +161,14 @@ public class MateToolExecutor {
                     : failure;
             LOGGER.atError()
                     .addKeyValue("operation", "mate.tool.validateArguments")
-                    .addKeyValue("errorCode", "INVALID_TOOL_SCHEMA")
+                    .addKeyValue(
+                            "errorCode",
+                            com.campusclaw.common.constant.ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE)
+                    .addKeyValue("validationReason", "INVALID_TOOL_SCHEMA")
                     .addKeyValue("toolId", tool.binding().id())
                     .setCause(diagnostic)
                     .log("Failed to validate managed business tool arguments");
-            throw new MateToolExecutionException(tool.binding().name(), "business input schema is invalid");
+            throw new InvalidDefinitionException(tool.binding().name());
         }
     }
 
@@ -179,59 +187,28 @@ public class MateToolExecutor {
                 : failure;
         LOGGER.atError()
                 .addKeyValue("operation", "mate.tool.validateDefinition")
-                .addKeyValue("errorCode", "INVALID_TOOL_SCHEMA")
+                .addKeyValue(
+                        "errorCode",
+                        com.campusclaw.common.constant.ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE)
+                .addKeyValue("validationReason", "INVALID_TOOL_SCHEMA")
                 .addKeyValue("toolId", tool.binding().id())
                 .setCause(diagnostic)
                 .log("Failed to validate managed business tool definition");
     }
 
-    static final class InvalidDefinitionException extends MateToolExecutionException {
+    static final class InvalidDefinitionException extends MateToolExecutionException implements StableErrorCode {
 
         private InvalidDefinitionException(String toolName) {
             super(toolName, "business input schema is invalid");
         }
-    }
 
-    private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {
-        if (signal != null && signal.isCancelled()) {
-            throw new InterruptedException("Tool execution was cancelled");
+        @Override
+        public String stableErrorCode() {
+            return com.campusclaw.common.constant.ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE;
         }
     }
 
     private static Map<String, Object> callToolArguments(String name, Map<String, Object> args) {
         return Map.of("tool", name, "args", args);
-    }
-
-    private record PreparedMateToolInvocation(
-            MateToolExecutor executor,
-            String toolCallId,
-            String toolName,
-            Map<String, Object> arguments,
-            String targetId,
-            String targetName,
-            String targetVersion,
-            JsonNode inputSchema,
-            Map<String, Object> businessArguments)
-            implements PreparedToolInvocation {
-
-        @Override
-        public Map<String, Object> arguments() {
-            return PreparedToolInvocation.snapshotArguments(arguments);
-        }
-
-        @Override
-        public String authorizationTargetName() {
-            return targetName;
-        }
-
-        @Override
-        public String authorizationTargetId() {
-            return targetId;
-        }
-
-        @Override
-        public AgentToolResult execute(CancellationToken signal, AgentToolUpdateCallback onUpdate) throws Exception {
-            return executor.executePrepared(targetId, targetName, businessArguments, signal);
-        }
     }
 }

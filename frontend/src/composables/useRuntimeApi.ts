@@ -6,7 +6,7 @@ import type { CommandDescriptor, CommandInvocation, CommandResult } from '../run
 import { codePointLength, decodeHistory, decodeModels, decodeSession, invalidResponse, matchesReceipt, messageEvent, readEventStream, record } from '../runtime/protocol';
 import type { PendingOperation, PendingStore } from '../runtime/sessionIndex';
 import { executionState, executionTodos, mergeEvent, reconcileEvents } from '../runtime/eventStore';
-import { normalizeQuestionAnswers, questionAnswerEvent } from '../runtime/questionInteraction';
+import { normalizeQuestionEventAnswers, questionAnswerEvent } from '../runtime/questionInteraction';
 import { defaultRuntimeConnection } from '../runtime/runtimeConfiguration';
 import type { RuntimeConnectionSnapshot, RuntimeEnvironmentSource } from '../runtime/runtimeConfiguration';
 
@@ -427,7 +427,7 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
       || !execution.value.confirming || !historyReady.value || recovering.value || receiptUnknown.value || uncertainty.value) {
       throw new RuntimeApiError({ code: 'QUESTION_ANSWER_NOT_PENDING', message: '待回答问题已变化，请重新核对。' });
     }
-    return submitStream(questionAnswerEvent(targetEventId, normalizeQuestionAnswers(pending.questions, answers)), headers);
+    return submitStream(questionAnswerEvent(targetEventId, normalizeQuestionEventAnswers(pending, answers)), headers);
   }
   function listCommands(): Promise<CommandDescriptor[]> {
     if (catalogStatus.value === 'ready') return Promise.resolve(commands.value);

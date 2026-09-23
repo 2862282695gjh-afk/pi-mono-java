@@ -131,8 +131,19 @@ public class RuntimeEntryCodec {
             OffsetDateTime createdAt) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("tool_call_id", toolCallId);
-        payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+        appendQuestionPayload(payload, snapshot);
         return entry(sessionId, entryId, RuntimeEventType.AGENT_QUESTION.value(), createdAt, payload);
+    }
+
+    private void appendQuestionPayload(ObjectNode payload, QuestionRequestSnapshotDTO snapshot) {
+        if (!snapshot.isBusinessConfirmation()) {
+            payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+            return;
+        }
+        payload.put("label", snapshot.label());
+        if (snapshot.hasContext()) {
+            payload.set("context", snapshot.context());
+        }
     }
 
     public RuntimeEntryDTO planEntry(

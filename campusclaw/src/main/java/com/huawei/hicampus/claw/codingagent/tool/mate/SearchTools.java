@@ -109,9 +109,9 @@ public class SearchTools implements AgentTool {
         try {
             return executor.resolveSkillDefinition(toolName);
         } catch (ResolutionException failure) {
-            throw new SearchToolsException(codeFor(failure.reason()));
+            throw new SearchToolsException(codeFor(failure.reason()), failure);
         } catch (InvalidDefinitionException failure) {
-            throw new SearchToolsException(ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE);
+            throw new SearchToolsException(ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE, failure);
         }
     }
 
@@ -135,7 +135,11 @@ public class SearchTools implements AgentTool {
         private final String errorCode;
 
         private SearchToolsException(String errorCode) {
-            super(errorCode);
+            this(errorCode, null);
+        }
+
+        private SearchToolsException(String errorCode, Throwable cause) {
+            super(errorCode, cause);
             this.errorCode = errorCode;
         }
 

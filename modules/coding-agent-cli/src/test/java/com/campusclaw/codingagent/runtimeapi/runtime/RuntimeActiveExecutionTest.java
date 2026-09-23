@@ -7,6 +7,8 @@ package com.campusclaw.codingagent.runtimeapi.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -24,10 +26,12 @@ import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.campusclaw.codingagent.runtimeapi.session.PlanConfirmationResult;
+import com.campusclaw.codingagent.tool.question.PreparedQuestionInvocation;
 import com.campusclaw.codingagent.tool.question.QuestionAnswerDTO;
 import com.campusclaw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.campusclaw.codingagent.tool.question.QuestionDTO;
 import com.campusclaw.codingagent.tool.question.QuestionRequestSnapshotDTO;
+import com.campusclaw.codingagent.tool.question.UserQuestionException;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
@@ -52,6 +56,46 @@ class RuntimeActiveExecutionTest {
 
         assertThatThrownBy(() -> execution.beforeToolCall(context)).isInstanceOf(RuntimeToolCallDeniedException.class);
         assertThat(handled).hasValue(0);
+    }
+
+    @Test
+    void shouldRouteAllowedPreparedQuestionToQuestionHandler() throws Exception {
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
+        when(permissions.decide(org.mockito.ArgumentMatchers.any(BeforeToolCallContext.class)))
+                .thenReturn(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        execution.bindToolPermissions(permissions);
+        AtomicInteger calls = new AtomicInteger();
+        execution.installConfirmationHandler(context -> {
+            calls.incrementAndGet();
+            return BeforeToolCallResult.allow();
+        });
+        BeforeToolCallContext question = businessQuestionContext("call-1", "first");
+
+        assertThat(execution.beforeToolCall(question)).isEqualTo(BeforeToolCallResult.allow());
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void shouldRejectPreparedQuestionUnlessPermissionAllowsIt() {
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        execution.bindAgentId("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        execution.bindTarget(new ExecutionTargetDTO("session", "execution", "root", "segment-1"));
+        RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
+        execution.bindToolPermissions(permissions);
+        BeforeToolCallContext question = businessQuestionContext("call-1", "first");
+
+        when(permissions.decide(question)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
+        UserQuestionException required =
+                assertThrows(UserQuestionException.class, () -> execution.beforeToolCall(question));
+        assertThat(required.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_REQUIRED_ERROR_CODE);
+
+        when(permissions.decide(question)).thenReturn(RuntimeToolPermissionPolicy.Decision.DENY);
+        UserQuestionException denied =
+                assertThrows(UserQuestionException.class, () -> execution.beforeToolCall(question));
+        assertThat(denied.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_DENIED_ERROR_CODE);
     }
 
     @Test
@@ -145,6 +189,8 @@ class RuntimeActiveExecutionTest {
 
         var failure = assertThrows(CancellationException.class, () -> execution.review("exit-1", signal));
         assertThat(failure).hasMessage("Plan review was cancelled");
+        assertThat(execution.beginPlanReview(planProposal(execution, "exit-2", "plan-2", "# 新方案")))
+                .isNotDone();
     }
 
     @Test
@@ -192,6 +238,46 @@ class RuntimeActiveExecutionTest {
 
     private static BeforeToolCallContext context(ToolCall call) {
         return new BeforeToolCallContext(null, call, call.arguments(), null);
+    }
+
+    private static BeforeToolCallContext businessQuestionContext(String id, String label) {
+        String name = "confirm_access_change";
+        Map<String, Object> arguments = Map.of("label", label);
+        ToolCall call = new ToolCall(id, name, arguments);
+        PreparedQuestionInvocation invocation = new PreparedQuestionInvocation() {
+            @Override
+            public String toolCallId() {
+                return id;
+            }
+
+            @Override
+            public String toolName() {
+                return name;
+            }
+
+            @Override
+            public Map<String, Object> arguments() {
+                return arguments;
+            }
+
+            @Override
+            public String authorizationTargetId() {
+                return "tool-11111111111111111111111111111111";
+            }
+
+            @Override
+            public QuestionRequestSnapshotDTO questionRequest() {
+                return QuestionRequestSnapshotDTO.businessConfirmation(label, null);
+            }
+
+            @Override
+            public com.campusclaw.agent.tool.AgentToolResult execute(
+                    com.campusclaw.agent.tool.CancellationToken signal,
+                    com.campusclaw.agent.tool.AgentToolUpdateCallback onUpdate) {
+                throw new AssertionError("test invocation must not execute");
+            }
+        };
+        return new BeforeToolCallContext(null, call, arguments, null, invocation);
     }
 
     private static ToolConfirmationDecisionDTO decision(String toolCallId, String previous, String segment) {

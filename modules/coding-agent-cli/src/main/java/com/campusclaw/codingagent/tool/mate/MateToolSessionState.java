@@ -7,6 +7,8 @@ package com.campusclaw.codingagent.tool.mate;
 import java.util.List;
 
 import com.campusclaw.agent.tool.AgentTool;
+import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
+import com.campusclaw.codingagent.tool.question.UserQuestionPort;
 
 /**
  * 保存单个 Session 共享的 Mate 执行器并按需创建工具实例。
@@ -20,6 +22,10 @@ public class MateToolSessionState {
 
     MateToolSessionState(MateToolExecutor executor) {
         this.executor = executor;
+    }
+
+    public void bindBusinessConfirmation(ToolEntryPoint entryPoint, UserQuestionPort questions) {
+        executor.bindBusinessConfirmation(entryPoint, questions);
     }
 
     public List<AgentTool> createAgentToolAdapters() {

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { reactive } from 'vue';
 import { RuntimeApiError } from '../types/runtime';
-import { displayedCustomAnswer, emptyQuestionDrafts, normalizeQuestionAnswers, QuestionDraftStore, questionAnswerEvent,
-  summarizeQuestionAnswers, validateQuestionDraft, validateQuestionDrafts } from './questionInteraction';
+import { BUSINESS_CONFIRMATION_ANSWER_ID, displayedCustomAnswer, emptyQuestionDrafts, normalizeQuestionAnswers,
+  normalizeQuestionEventAnswers, QuestionDraftStore, questionAnswerEvent, summarizeQuestionAnswers,
+  validateBusinessConfirmationDraft, validateQuestionDraft, validateQuestionDrafts } from './questionInteraction';
 import type { RuntimeQuestion } from '../types/runtime';
 
 const questions: RuntimeQuestion[] = [
@@ -44,6 +45,22 @@ describe('question answer snapshots', () => {
     });
     expect(() => normalizeQuestionAnswers(questions, [answers[0], answers[0], answers[2]])).toThrow(RuntimeApiError);
     expect(() => normalizeQuestionAnswers(questions, [{ ...answers[0], id: 'unknown' }, answers[1], answers[2]])).toThrow(RuntimeApiError);
+  });
+  it('builds the fixed business confirmation answer slot and enforces blank and UTF-16 limits', () => {
+    expect(validateBusinessConfirmationDraft({ selected: [], custom: ' 继续执行\n' })).toEqual({
+      answer: { id: BUSINESS_CONFIRMATION_ANSWER_ID, selected: [], custom: '继续执行' },
+    });
+    expect(validateBusinessConfirmationDraft({ selected: [], custom: ' \n\t' })).toEqual({ error: '请输入回答。' });
+    expect(validateBusinessConfirmationDraft({ selected: [], custom: '😀'.repeat(2049) })).toEqual({
+      error: '回答最多 4096 个字符。',
+    });
+    const payload = { label: 'driver_design_confirm', context: { nested: [null, true] } };
+    expect(normalizeQuestionEventAnswers(payload, [{ id: 'confirmation', selected: [], custom: '\u3000确认\u3000' }]))
+      .toEqual([{ id: 'confirmation', selected: [], custom: '确认' }]);
+    expect(() => normalizeQuestionEventAnswers(payload, [{ id: 'driver_design_confirm', selected: [], custom: '确认' }]))
+      .toThrow(RuntimeApiError);
+    expect(() => normalizeQuestionEventAnswers(payload, [{ id: 'confirmation', selected: ['同意'], custom: '确认' }]))
+      .toThrow(RuntimeApiError);
   });
   it('copies reactive drafts and isolates them by Session and exact question event', () => {
     const constructorQuestion: RuntimeQuestion[] = [{ id: 'constructor', question: '回答', multiSelect: false }];

@@ -82,6 +82,9 @@ public class AgentSessionFactory {
         MateToolSessionState mateState = mateToolsetFactory == null
                 ? null
                 : mateToolsetFactory.createSession(runtime, request.mateCredentials());
+        if (mateState != null) {
+            mateState.bindBusinessConfirmation(request.entryPoint(), request.userQuestionPort());
+        }
         ToolAssemblyContext context = new ToolAssemblyContext(
                 request.entryPoint(),
                 runtime,

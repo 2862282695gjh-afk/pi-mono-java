@@ -110,8 +110,19 @@ public class RuntimeCommittedEventFactory {
             String sourceEventId) {
         ObjectNode payload = sourcePayload(sourceEventId);
         payload.put("toolCallId", toolCallId);
-        payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+        appendQuestionPayload(payload, snapshot);
         return create(entry, eventId, CommittedEventType.AGENT_QUESTION, payload);
+    }
+
+    private void appendQuestionPayload(ObjectNode payload, QuestionRequestSnapshotDTO snapshot) {
+        if (!snapshot.isBusinessConfirmation()) {
+            payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+            return;
+        }
+        payload.put("label", snapshot.label());
+        if (snapshot.hasContext()) {
+            payload.set("context", snapshot.context());
+        }
     }
 
     public CommittedEventDTO agentMessage(

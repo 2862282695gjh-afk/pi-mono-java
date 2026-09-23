@@ -11,6 +11,7 @@ import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -254,13 +255,36 @@ public class SessionEventResponseVO {
      * Agent 完整问题事件字段。
      */
     @Getter
-    @RequiredArgsConstructor
     public static final class AgentQuestionResponseVO implements EventDetailsResponseVO {
         private final String sourceEventId;
 
         private final String toolCallId;
 
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         private final List<QuestionResponseVO> questions;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String label;
+
+        private final JsonNode context;
+
+        public AgentQuestionResponseVO(
+                String sourceEventId,
+                String toolCallId,
+                List<QuestionResponseVO> questions,
+                String label,
+                JsonNode context) {
+            this.sourceEventId = sourceEventId;
+            this.toolCallId = toolCallId;
+            this.questions = questions;
+            this.label = label;
+            this.context = context == null ? null : context.deepCopy();
+        }
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        public JsonNode getContext() {
+            return context == null ? null : context.deepCopy();
+        }
     }
 
     /**

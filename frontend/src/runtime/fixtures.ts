@@ -14,6 +14,10 @@ export const questionFixture = (eventId = 'question-a') => eventFixture({ eventI
   toolCallId: 'ask-a', questions: [{ id: 'scope', header: '范围', question: '选择范围', options: [
     { label: '东区', description: '只核对东区' }, { label: '全部' },
   ], multiSelect: false }, { id: 'note', question: '补充说明', multiSelect: false }] });
+export const businessConfirmationQuestionFixture = (eventId = 'business-confirmation-question') => eventFixture({ eventId,
+  type: 'agent.question', sourceEventId: 'root-a', toolCallId: 'business-confirmation-call', label: 'driver_design_confirm', context: {
+    '方案': '驱动配置方案', '超时秒数': 30, '补充说明': null, '范围': ['东区', { '夜间': true }],
+  } });
 export function jsonResponse(result: unknown, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify({ resCode: '0', resMsg: 'success', result }), { headers: { 'Content-Type': 'application/json', ...headers } });
 }

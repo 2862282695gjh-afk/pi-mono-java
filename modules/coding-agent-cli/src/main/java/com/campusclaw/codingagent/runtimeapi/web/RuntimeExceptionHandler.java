@@ -191,6 +191,9 @@ public class RuntimeExceptionHandler {
 
     private static RuntimeErrorCode classifyNonIdentifierParameter(
             HandlerMethodValidationException error, HttpServletRequest request) {
+        if (isEventSubmissionRequest(request)) {
+            return RuntimeErrorCode.INVALID_EVENT_REQUEST;
+        }
         if (isEventListRequest(request)) {
             return RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
         }

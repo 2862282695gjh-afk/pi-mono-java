@@ -204,6 +204,35 @@ class ToolExecutionPipelineTest {
     }
 
     @Test
+    void invalidDefinitionFailsBeforePermissionOrExecution() throws Exception {
+        var pipeline = new ToolExecutionPipeline();
+        AgentTool tool = org.mockito.Mockito.mock(AgentTool.class);
+        org.mockito.Mockito.when(tool.name()).thenReturn("deviceInspection");
+        org.mockito.Mockito.when(tool.description()).thenReturn("查询设备巡检信息");
+        var schema = new ObjectMapper().createObjectNode().put("$ref", "#/$defs/private-missing");
+        org.mockito.Mockito.when(tool.parameters()).thenReturn(schema);
+        var call = new ToolCall("call-invalid-definition", "deviceInspection", Map.of());
+        var beforeCalled = new AtomicBoolean(false);
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalled.set(true);
+            return BeforeToolCallResult.allow();
+        });
+
+        var result = pipeline.execute(tool, call, Map.of(), sampleContext(), new CancellationToken(), null);
+
+        assertTrue(result.isError());
+        assertEquals("TOOL_DEFINITION_INVALID", text(result.content().getFirst()));
+        assertEquals(Map.of("errorCode", "TOOL_DEFINITION_INVALID"), result.details());
+        assertFalse(beforeCalled.get());
+        org.mockito.Mockito.verify(tool, org.mockito.Mockito.never())
+                .prepare(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyMap());
+        org.mockito.Mockito.verify(tool, org.mockito.Mockito.never())
+                .execute(
+                        org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyMap(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void oversizedRecoveryShouldSuggestExactSearchOnlyForDisclosableDefinition() {
         JsonNode recovery = executeRecoveryFailure(
                 true,

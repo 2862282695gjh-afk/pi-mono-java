@@ -37,6 +37,8 @@ public class MockMateToolClient implements MateToolClient {
 
     private MateToolClient.ToolResult overriddenResult;
 
+    private RuntimeException skillListFailure;
+
     private int agentListCalls;
 
     private int skillListCalls;
@@ -135,6 +137,15 @@ public class MockMateToolClient implements MateToolClient {
         this.overriddenResult = result;
     }
 
+    /**
+     * 覆盖 Skill 工具发现失败，用于验证稳定错误和诊断链。
+     *
+     * @param failure 发现失败；为空时恢复正常行为
+     */
+    public void overrideSkillListFailure(RuntimeException failure) {
+        this.skillListFailure = failure;
+    }
+
     @Override
     public List<MateToolMeta> listAgentTools(String agentId) {
         agentListCalls++;
@@ -146,6 +157,9 @@ public class MockMateToolClient implements MateToolClient {
     public List<MateToolMeta> listSkillTools(String skillId) {
         skillListCalls++;
         lastListSkillId = skillId;
+        if (skillListFailure != null) {
+            throw skillListFailure;
+        }
         return resolve(toolsBySkill.get(skillId));
     }
 

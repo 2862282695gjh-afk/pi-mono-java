@@ -205,6 +205,21 @@ class RuntimeEventRoutesTest {
         verify(service, never()).submit(any(), any(), any(Locale.class), any());
     }
 
+    @Test
+    void shouldMapMethodValidationOfEventBodyToInvalidEventRequest() throws Exception {
+        String oversized = "x".repeat(ClawConstants.RuntimeApi.MAX_QUESTION_CUSTOM_ANSWER_CHARACTERS + 1);
+        String body = "{\"event\":{\"type\":\"user.question_answer\",\"targetEventId\":\"question-1\","
+                + "\"answers\":[{\"id\":\"confirmation\",\"selected\":[],\"custom\":\""
+                + oversized + "\"}]}}";
+
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"));
+        verify(service, never()).submit(any(), any(), any(Locale.class), any());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"steers", "follow-ups", "abort"})
     void shouldReturnNotFoundForRetiredControlRoute(String route) throws Exception {

@@ -1,10 +1,10 @@
 # Mate Tool Client 与 Session 发现设计
 
-> 文档版本：3.1.0
+> 文档版本：3.2.0
 >
 > 状态：精确发现、注册与调用已实现；数据加载、同步、刷新和跨节点一致性待实现
 >
-> 更新日期：2026-09-22
+> 更新日期：2026-09-23
 > 决策记录：[ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
 > [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
@@ -88,8 +88,11 @@ Agent 直接绑定且模型可见的 Skill 工具范围内按大小写敏感的�
 两种入口均经过 Pipeline 和 Host before hook。代理使用完整业务 Schema；`CallTool` 先校验
 外层 `tool/args`，再按可信名称解析定义并校验业务参数，生成不可变 `PreparedToolInvocation`。
 Host 随后按解析出的真实工具检查 allow、ask、deny 和必要确认，通过后执行同一准备快照。
-顺序固定为“可信解析 → 参数校验 → 权限或必要确认 → 业务执行 → 结果回传”，Mate 仍是最终
-授权和执行权威。
+顺序固定为“可信解析 → 参数校验 → 权限或必要确认 → 业务执行 → 结果回传”。普通远端工具由 Mate 负责最终
+授权和执行；已绑定的 `confirm_with_user` 由本地业务适配处理，见[业务确认](../plans/showcase-confirm-with-user-implementation.md)。
+同一次准备固定 BusinessToolDispatcher 选择的处理器，Runtime 通过 PreparedQuestionInvocation 读取通用问题快照；
+BusinessConfirmationAdapter 只做 label/context 与 content 转换，MateRemoteToolHandler 承担其余工具远调。
+本地确认失败不降级远调，适配器不依赖 Runtime 权限策略或维护第二份 prepared 状态。
 
 解析器以 Session 私有状态缓存 Agent 工具及已请求的 Skill 工具定义；按可信关联查询所需
 Skill 元数据，不把整个 Agent 与全部 Skill 的刷新作为 Call 的前置条件。后台元数据查询不
@@ -147,6 +150,7 @@ HTTP method、path 和请求响应保持不变；2.3.0 只改变哪些请求会�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.2.0 | 2026-09-23 | 业务工具通过固定处理器分派，将本地业务确认适配与 Runtime 问答生命周期解耦。 |
 | 3.1.0 | 2026-09-22 | 实现按精确技术名披露单个可信工具定义，并固定确认前校验、预算和参数恢复边界。 |
 | 3.0.0 | 2026-09-22 | 对齐 Agent 代理、Skill 文件渐进披露、CallTool 统一执行及正文读取错误契约。 |
 | 2.4.1 | 2026-09-19 | 补齐 Mate 凭据已实现行为的源码提交、符号及测试验收范围。 |

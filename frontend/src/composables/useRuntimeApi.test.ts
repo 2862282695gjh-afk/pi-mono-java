@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import { useRuntimeApi } from './useRuntimeApi';
-import { eventFixture, idleFixture, jsonResponse, questionFixture, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
+import { businessConfirmationQuestionFixture, eventFixture, idleFixture, jsonResponse, questionFixture, sessionFixture,
+  streamResponse, userFixture } from '../runtime/fixtures';
 import { memoryStorage } from '../runtime/storageFixture';
 import { SessionIndexRepository } from '../runtime/sessionIndex';
 import { freezeInvocation } from '../runtime/commands';
@@ -250,6 +251,28 @@ describe('Claw Runtime Session Events coordinator', () => {
     expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.question_answer', targetEventId: question.eventId,
       answers: answer.answers } });
     expect(runtime.events.value).toContainEqual(answer);
+  });
+  it('submits the fixed business confirmation answer to the exact question event and continues the same root', async () => {
+    const question = businessConfirmationQuestionFixture();
+    const waiting = [userFixture(), question, idleFixture('confirming')];
+    const answer = eventFixture({ eventId: 'business-confirmation-answer', type: 'user.question_answer', targetEventId: question.eventId,
+      answers: [{ id: 'confirmation', selected: [], custom: '继续执行' }] }) as Extract<
+        RuntimeEvent, { type: 'user.question_answer' }>;
+    const result = eventFixture({ eventId: 'business-confirmation-result', type: 'agent.tool_result', sourceEventId: 'root-a',
+      toolCallId: 'business-confirmation-call', content: [{ type: 'text', text: '{"content":"继续执行"}' }], isError: false });
+    const { runtime, fetcher } = setup([...waiting, answer, result, idleFixture()], 'running');
+    runtime.session.value = sessionFixture({ state: 'running' });
+    runtime.events.value = waiting;
+    fetcher.mockResolvedValueOnce(streamResponse([answer, result, idleFixture()]));
+
+    const submission = await runtime.answerQuestion(question.eventId,
+      [{ id: 'confirmation', selected: [], custom: ' 继续执行 ' }], { 'access-token': 'fixture-business-confirmation' });
+    await expect(submission.confirmation).resolves.toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.question_answer', targetEventId: question.eventId,
+      answers: [{ id: 'confirmation', selected: [], custom: '继续执行' }] } });
+    expect(runtime.events.value).toContainEqual(result);
+    expect(runtime.events.value.filter((event) => event.type === 'user.message')).toHaveLength(1);
   });
   it('locks duplicate answer writes and never retries a missing receipt', async () => {
     const question = questionFixture();

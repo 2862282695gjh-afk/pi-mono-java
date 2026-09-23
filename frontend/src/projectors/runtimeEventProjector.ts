@@ -29,6 +29,11 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           turns.push(questionToolStatus(event, result, observing));
           break;
         }
+        if (isBusinessConfirmationCall(event)) {
+          if (question?.type === 'agent.question' && isBusinessConfirmationQuestion(question)) break;
+          turns.push(questionToolStatus(event, result, observing));
+          break;
+        }
         const confirmed = hasToolConfirmation(events, event);
         const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
@@ -85,8 +90,11 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         const interrupted = events.slice(index + 1).some((item) => item.type === 'user.interrupt'
           && item.targetEventId === event.sourceEventId);
+        const payload = isBusinessConfirmationQuestion(event)
+          ? { label: event.label, ...(event.context === undefined ? {} : { context: event.context }) }
+          : { questions: event.questions };
         turns.push({ key, kind: 'question', eventId: event.eventId, sourceEventId: event.sourceEventId,
-          questions: event.questions, answer: answer?.type === 'user.question_answer' ? answer.answers : undefined,
+          ...payload, answer: answer?.type === 'user.question_answer' ? answer.answers : undefined,
           lifecycle: terminal ? 'closed' : interrupted ? 'stopping' : undefined });
         break;
       }
@@ -147,6 +155,17 @@ function isActivelyAdjusting(events: RuntimeEvent[], sourceEventId: string, obse
 function matchingQuestion(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>) {
   return events.find((item) => item.type === 'agent.question' && item.toolCallId === call.toolCallId
     && item.sourceEventId === call.sourceEventId);
+}
+
+function isBusinessConfirmationCall(call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
+  return call.toolName === 'confirm_with_user'
+    || ((call.toolName === 'CallTool' || call.toolName === 'CallMateTool')
+      && call.arguments.tool === 'confirm_with_user');
+}
+
+function isBusinessConfirmationQuestion(question: Extract<RuntimeEvent, { type: 'agent.question' }>): question is Extract<
+  RuntimeEvent, { type: 'agent.question' }> & { label: string; context?: Record<string, unknown> } {
+  return 'label' in question;
 }
 
 function matchingPlan(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {

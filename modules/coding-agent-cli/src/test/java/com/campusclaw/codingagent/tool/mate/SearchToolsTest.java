@@ -24,10 +24,14 @@ import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.campusclaw.codingagent.test.Log4j2TestAppender;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -116,6 +120,39 @@ class SearchToolsTest {
                 .createSearchTools();
 
         assertCode(schemaMissing, "Query", ClawConstants.RuntimeApi.TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE);
+    }
+
+    @Test
+    void discoveryFailureShouldKeepStableCodeCauseAndScopedDiagnostics() {
+        IllegalStateException cause = new IllegalStateException("connection failed");
+        client.overrideSkillListFailure(cause);
+        SearchTools tool = state(List.of(skill(List.of(binding(QUERY_ID, "Query", "查询", "allow")))))
+                .createSearchTools();
+        Logger logger = (Logger) LogManager.getLogger(MateToolResolver.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("mate-resolution-discovery");
+        logs.start();
+        logger.addAppender(logs);
+
+        try {
+            assertThatThrownBy(() -> tool.execute("call", Map.of("tool", "Query"), null, null))
+                    .isInstanceOfSatisfying(StableErrorCode.class, error -> assertThat(error.stableErrorCode())
+                            .isEqualTo(ClawConstants.RuntimeApi.TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE))
+                    .hasRootCause(cause);
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+
+        assertThat(logs.events()).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getThrown()).isSameAs(cause);
+            assertThat(event.getContextData().toMap())
+                    .containsEntry("operation", "mate.tool.listSkillTools")
+                    .containsEntry("errorCode", ClawConstants.RuntimeApi.TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE)
+                    .containsEntry("resolutionReason", "METADATA_UNAVAILABLE")
+                    .containsEntry("skillId", SKILL_ID)
+                    .containsEntry("detail", "business tool discovery failed");
+        });
     }
 
     @Test

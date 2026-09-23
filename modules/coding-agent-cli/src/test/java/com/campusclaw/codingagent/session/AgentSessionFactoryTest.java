@@ -50,10 +50,15 @@ import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor.PreparedCompaction;
+import com.campusclaw.codingagent.tool.builtin.BuiltInToolFactory;
+import com.campusclaw.codingagent.tool.builtin.BuiltInToolProperties;
 import com.campusclaw.codingagent.tool.builtin.ConfiguredToolAssembler;
+import com.campusclaw.codingagent.tool.builtin.DefaultConfiguredToolAssembler;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
 import com.campusclaw.codingagent.tool.mate.MateToolsetFactory;
+import com.campusclaw.codingagent.tool.question.UserQuestionPort;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -135,6 +140,69 @@ class AgentSessionFactoryTest {
         verify(assembler, org.mockito.Mockito.times(2)).assemble(eq(ToolEntryPoint.RUNTIME), any());
         verify(runtimeManager, org.mockito.Mockito.times(2)).prepare(runtime.agentId());
         verify(mateToolsetFactory, org.mockito.Mockito.times(2)).createSession(runtime, credentials);
+    }
+
+    @Test
+    void runtimeDirectToolShouldShareConfirmationWhenProfileOmitsCallTool() throws Exception {
+        Path agentRoot = Files.createDirectory(temporaryDirectory.resolve("direct-confirm"));
+        PreparedAgentRuntime runtime = prepared(agentRoot, testPrompts());
+        AgentRuntimeManager runtimes = mock(AgentRuntimeManager.class);
+        when(runtimes.prepare(runtime.agentId())).thenReturn(runtime);
+        MateToolSessionState mateState = mock(MateToolSessionState.class);
+        when(mateState.createAgentToolAdapters()).thenReturn(List.of(new StubTool("business_question")));
+        MateToolsetFactory mateFactory = mock(MateToolsetFactory.class);
+        when(mateFactory.createSession(eq(runtime), any())).thenReturn(mateState);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<MateToolsetFactory> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(mateFactory);
+        BuiltInToolProperties properties = new BuiltInToolProperties();
+        properties.setRuntime(List.of("Read"));
+        properties.afterPropertiesSet();
+        BuiltInToolFactory builtIns = mock(BuiltInToolFactory.class);
+        when(builtIns.create(any(), any())).thenReturn(new StubTool("Read"));
+        UserQuestionPort questionPort = mock(UserQuestionPort.class);
+        AgentSessionFactory factory = new AgentSessionFactory(
+                mock(CampusClawAiService.class),
+                runtimes,
+                new DefaultConfiguredToolAssembler(properties, builtIns),
+                provider,
+                mock(SessionCompactor.class),
+                new PlanPolicyPromptComposer());
+
+        ManagedAgentSession session =
+                factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.RUNTIME, questionPort));
+
+        assertThat(session.tools()).extracting(AgentTool::name).containsExactly("Read", "business_question");
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.RUNTIME, questionPort);
+    }
+
+    @Test
+    void nonRuntimeSessionsShouldBindLocalBusinessConfirmationHandlers() throws Exception {
+        Path agentRoot = Files.createDirectory(temporaryDirectory.resolve("non-runtime-confirm"));
+        PreparedAgentRuntime runtime = prepared(agentRoot, testPrompts());
+        AgentRuntimeManager runtimes = mock(AgentRuntimeManager.class);
+        when(runtimes.prepare(runtime.agentId())).thenReturn(runtime);
+        MateToolSessionState mateState = mock(MateToolSessionState.class);
+        MateToolsetFactory mateFactory = mock(MateToolsetFactory.class);
+        when(mateFactory.createSession(eq(runtime), any())).thenReturn(mateState);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<MateToolsetFactory> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(mateFactory);
+        ConfiguredToolAssembler assembler = mock(ConfiguredToolAssembler.class);
+        when(assembler.assemble(any(), any())).thenReturn(List.of(new StubTool("business_question")));
+        AgentSessionFactory factory = new AgentSessionFactory(
+                mock(CampusClawAiService.class),
+                runtimes,
+                assembler,
+                provider,
+                mock(SessionCompactor.class),
+                new PlanPolicyPromptComposer());
+
+        factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.CHILD_AGENT, null));
+        factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.CRON, null));
+
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.CHILD_AGENT, null);
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.CRON, null);
     }
 
     @Test
@@ -266,6 +334,29 @@ class AgentSessionFactoryTest {
                 mode,
                 null,
                 null);
+    }
+
+    private static ManagedAgentSessionRequest questionRequest(
+            String agentId, ToolEntryPoint entryPoint, UserQuestionPort questionPort) {
+        return new ManagedAgentSessionRequest(
+                agentId,
+                entryPoint,
+                ignored -> model(),
+                ThinkingLevel.MEDIUM,
+                MateCredentials.empty(),
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                ClawConstants.Agent.MODE_BUILD,
+                null,
+                null,
+                questionPort);
+    }
+
+    private static AgentPromptSnapshotDTO testPrompts() {
+        return new AgentPromptSnapshotDTO("prompt", "# Plan", "# Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
     }
 
     private static SessionCompactor successfulCompactor() {

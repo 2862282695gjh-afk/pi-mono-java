@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { decodeEvent, decodeHistory, matchesReceipt, messageEvent, readEventStream } from './protocol';
 import { canAnswerQuestion, canReviewPlan, executionState, executionTodos, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
 import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, parseCommand } from './commands';
-import { eventFixture, idleFixture, questionFixture, streamResponse, userFixture } from './fixtures';
+import { businessConfirmationQuestionFixture, eventFixture, idleFixture, questionFixture, streamResponse,
+  userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
 
 const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
@@ -16,6 +17,32 @@ const planCompleted = eventFixture({ eventId: 'plan-a', type: 'agent.plan', phas
   toolCallId: 'exit-a', content: '# 权威方案\n\n步骤' });
 
 describe('Session Events protocol and authoritative store', () => {
+  it.each([
+    'USER_QUESTION_ENTRY_UNSUPPORTED',
+    'USER_QUESTION_PORT_MISSING',
+    'USER_QUESTION_ADAPTER_UNBOUND',
+    'USER_QUESTION_BINDING_MISSING',
+    'USER_QUESTION_BINDING_AMBIGUOUS',
+    'USER_QUESTION_PERMISSION_DENIED',
+    'USER_QUESTION_PERMISSION_REQUIRED',
+    'USER_QUESTION_DISCOVERY_FAILED',
+    'USER_QUESTION_TOOL_NOT_FOUND',
+    'USER_QUESTION_TOOL_ID_MISMATCH',
+    'USER_QUESTION_PREPARATION_CONFLICT',
+    'USER_QUESTION_NOT_PREPARED',
+    'USER_QUESTION_CALL_MISMATCH',
+    'USER_QUESTION_ANSWER_INVALID',
+    'USER_QUESTION_MULTIPLE_TOOL_CALLS',
+    'USER_QUESTION_CALL_NOT_FINALIZED',
+    'USER_QUESTION_PENDING_CONFLICT',
+    'USER_QUESTION_WAIT_MISSING',
+  ])('preserves question failure code %s in live events and history', async (errorCode) => {
+    const failure = { ...result, isError: true, errorCode, content: [{ type: 'text', text: '具体失败原因' }] };
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse([failure]), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual([failure]);
+    expect(decodeHistory({ events: [failure], nextPage: null }).events).toEqual([failure]);
+  });
   it('accepts completed and preview shapes, text-only tool blocks including empty text', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();
@@ -40,6 +67,26 @@ describe('Session Events protocol and authoritative store', () => {
     await readEventStream(streamResponse([question, answer]), (event) => { received.push(event); }, new AbortController().signal);
     expect(received).toEqual([question, answer]);
   });
+  it('decodes the mutually exclusive business confirmation label/context payload without rewriting raw values', async () => {
+    const question = businessConfirmationQuestionFixture();
+    const withoutContext = { ...question, eventId: 'business-confirmation-empty', label: '' };
+    delete (withoutContext as Record<string, unknown>).context;
+    expect(decodeHistory({ events: [question, withoutContext], nextPage: null }).events).toEqual([question, withoutContext]);
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse([question]), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual([question]);
+    expect(decodeEvent({ ...question, eventId: 'business-confirmation-whitespace', label: '  \n', context: {} })).toMatchObject({
+      label: '  \n', context: {},
+    });
+  });
+  it.each([
+    { ...businessConfirmationQuestionFixture(), questions: [{ id: 'x', question: '重复载荷', multiSelect: false }] },
+    { ...businessConfirmationQuestionFixture(), label: 42 },
+    { ...businessConfirmationQuestionFixture(), context: null },
+    { ...businessConfirmationQuestionFixture(), context: [] },
+    { ...businessConfirmationQuestionFixture(), label: undefined },
+    { ...questionFixture(), context: {} },
+  ])('rejects malformed business confirmation question payloads %j', (event) => expect(() => decodeEvent(event)).toThrow());
   it.each([
     { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: false, unknown: true }] },
     { ...questionFixture(), questions: [{ id: 'scope', question: ' 问题', multiSelect: false }] },
@@ -214,6 +261,14 @@ describe('Session Events protocol and authoritative store', () => {
     expect(executionState([...waiting, { ...oldAnswer, eventId: 'answer-old-duplicate' }]).pendingQuestion).toEqual(current);
     const currentAnswer = { ...oldAnswer, eventId: 'answer-current', targetEventId: 'question-current' };
     expect(executionState([...waiting, currentAnswer]).pendingQuestion).toBeUndefined();
+  });
+  it('keeps the business confirmation question pending while the Session remains running', () => {
+    const question = businessConfirmationQuestionFixture();
+    const waiting = [userFixture(), question, idleFixture('confirming')];
+    expect(executionState(waiting)).toMatchObject({ confirming: true, pendingQuestion: question });
+    const answer = eventFixture({ eventId: 'business-confirmation-answer', type: 'user.question_answer', targetEventId: question.eventId,
+      answers: [{ id: 'confirmation', selected: [], custom: '继续执行' }] });
+    expect(executionState([...waiting, answer]).pendingQuestion).toBeUndefined();
   });
   it.each([
     { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '没有标题' },
