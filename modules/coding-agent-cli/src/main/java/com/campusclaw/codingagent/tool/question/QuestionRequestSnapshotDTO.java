@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 /**
  * 单次用户问题调用的不可变载荷快照。
+ *
  * @version [br_eCampusCore 26.0.0, 2026/09/15]
  * @since [br_eCampusCore 26.0.0]
  */
