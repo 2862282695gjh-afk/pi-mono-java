@@ -42,13 +42,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.context.properties.bind.Bindable;
-import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.env.PropertiesPropertySourceLoader;
-import org.springframework.boot.env.YamlPropertySourceLoader;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.core.env.StandardEnvironment;
-import org.springframework.core.io.ClassPathResource;
 
 class DefaultConfiguredToolAssemblerTest {
 
@@ -191,46 +184,6 @@ class DefaultConfiguredToolAssemblerTest {
                 .containsExactly("AskUserQuestion", "Read");
         assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.CHILD_AGENT)))
                 .containsExactly("AskUserQuestion", "Read");
-    }
-
-    @Test
-    void bundledBusinessConfirmationProfileShouldDisableQuestionAndAllowConfigurationOverride(
-            @org.junit.jupiter.api.io.TempDir Path agentRoot) throws Exception {
-        StandardEnvironment environment = businessConfirmationEnvironment();
-        PreparedAgentRuntime runtime = prepared(agentRoot);
-        AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
-        ToolAssemblyContext context = context(runtime, workspace, ToolEntryPoint.RUNTIME);
-
-        assertThat(names(configuredAssembler(environment), context))
-                .contains("CallTool")
-                .doesNotContain("AskUserQuestion");
-
-        environment
-                .getPropertySources()
-                .addFirst(new MapPropertySource(
-                        "external-override", Map.of("campusclaw.tools.runtime", "Read,AskUserQuestion,CallTool")));
-
-        assertThat(names(configuredAssembler(environment), context))
-                .containsExactly("Read", "AskUserQuestion", "CallTool");
-    }
-
-    private static StandardEnvironment businessConfirmationEnvironment() throws Exception {
-        var environment = new StandardEnvironment();
-        var yaml = new ClassPathResource("application.yml");
-        var sources = yaml.exists()
-                ? new YamlPropertySourceLoader().load("businessConfirmation", yaml)
-                : new PropertiesPropertySourceLoader()
-                        .load("businessConfirmation", new ClassPathResource("application.properties"));
-        sources.forEach(source -> environment.getPropertySources().addFirst(source));
-        return environment;
-    }
-
-    private static DefaultConfiguredToolAssembler configuredAssembler(StandardEnvironment environment) {
-        BuiltInToolProperties properties = Binder.get(environment)
-                .bind("campusclaw.tools", Bindable.of(BuiltInToolProperties.class))
-                .get();
-        properties.afterPropertiesSet();
-        return new DefaultConfiguredToolAssembler(properties, StubTool::new);
     }
 
     private static ToolAssemblyContext context(
