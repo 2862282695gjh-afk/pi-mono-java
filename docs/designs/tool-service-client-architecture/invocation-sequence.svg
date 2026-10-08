@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3400" height="2170" viewBox="0 0 3400 2170">
+<title>模块一 · 同一执行快照贯穿权限与调用</title>
+<defs>
+<marker id="a2886CE" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#2886CE"/></marker>
+<marker id="aC74738" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#C74738"/></marker>
+<marker id="a398D42" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#398D42"/></marker>
+<marker id="a805AC7" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#805AC7"/></marker>
+<marker id="aA17F72" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#A17F72"/></marker>
+<marker id="a72777D" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#72777D"/></marker>
+<marker id="a302E2A" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#302E2A"/></marker>
+</defs>
+<rect width="3400" height="2170" fill="white"/>
+<text x="1700.0" y="65" font-family="Times New Roman, Songti SC, serif" font-size="42" fill="#302E2A" text-anchor="middle">模块一 · 同一执行快照贯穿权限与调用</text>
+<text x="1700.0" y="121" font-family="Times New Roman, Songti SC, serif" font-size="27" fill="#72777D" text-anchor="middle">蓝：工具输入与 Schema 校验　红：prepare 固定身份 / 参数 / handler　绿：Host 通过后执行</text>
+<path d="M230,300 L230,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="25" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="230.0" y="268.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">模型</text>
+<path d="M805,300 L805,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="600" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="805.0" y="268.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">ToolExecutionPipeline</text>
+<path d="M1380,300 L1380,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="1175" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="1380.0" y="268.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">MateToolAdapter</text>
+<path d="M1970,300 L1970,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="1765" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="1970.0" y="249.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">MateToolExecutor</text>
+<text x="1970.0" y="287.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">+ BusinessToolDispatcher</text>
+<path d="M2575,300 L2575,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="2370" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="2575.0" y="268.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">Host 权限</text>
+<path d="M3160,300 L3160,1910" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<rect x="2955" y="200" width="410" height="110" rx="20" fill="#F6F8FB" stroke="#2886CE" stroke-width="2"/>
+<text x="3160.0" y="249.0" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">已固定的 handler</text>
+<text x="3160.0" y="287.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">本地 / 远端</text>
+<path d="M230,395 L805,395" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a2886CE)"/>
+<text x="517.5" y="377" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#2886CE" text-anchor="middle">tool_use(name, arguments)</text>
+<path d="M805,500 L975,500 L975,560 L805,560" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a2886CE)"/>
+<text x="993" y="534" font-family="Times New Roman, Songti SC, serif" font-size="24" fill="#2886CE" text-anchor="start">校验 Adapter 的真实业务 Schema</text>
+<path d="M805,675 L1380,675" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<text x="1092.5" y="657" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#C74738" text-anchor="middle">prepare(toolCallId, arguments)</text>
+<path d="M1380,805 L1970,805" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<text x="1675.0" y="787" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#C74738" text-anchor="middle">prepareAgent(tool, schema, args)</text>
+<path d="M1970,900 L2140,900 L2140,960 L1970,960" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<text x="2158" y="934" font-family="Times New Roman, Songti SC, serif" font-size="24" fill="#C74738" text-anchor="start">select(handler) → handler.prepare</text>
+<path d="M1970,1080 L805,1080" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#aC74738)"/>
+<text x="1387.5" y="1062" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#C74738" text-anchor="middle">PreparedToolInvocation：身份、参数、Schema、handler 均固定</text>
+<path d="M805,1220 L2575,1220" fill="none" stroke="#805AC7" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a805AC7)"/>
+<text x="1690.0" y="1202" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#805AC7" text-anchor="middle">before hook：对真实目标工具执行权限检查</text>
+<path d="M2575,1350 L805,1350" fill="none" stroke="#805AC7" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a805AC7)"/>
+<text x="1690.0" y="1332" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#805AC7" text-anchor="middle">通过 / 拒绝；普通工具 ASK 时先确认</text>
+<path d="M805,1510 L3160,1510" fill="none" stroke="#398D42" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a398D42)"/>
+<text x="1982.5" y="1492" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#398D42" text-anchor="middle">仅通过时 invocation.execute(signal, onUpdate)</text>
+<path d="M2680 1570 H3318 L3340 1592 V1700 H2680 Z M3318 1570 V1592 H3340" fill="#FFF3D3" stroke="#302E2A" stroke-width="2"/>
+<text x="3010.0" y="1611.0" font-family="Times New Roman, Songti SC, serif" font-size="28" fill="#302E2A" text-anchor="middle">执行准备阶段已固定的分支</text>
+<text x="3010.0" y="1649.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">远端：HttpMateToolClient.callTool → CampusMate</text>
+<text x="3010.0" y="1687.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">本地：BusinessConfirmationAdapter → Runtime 问答</text>
+<path d="M3160,1780 L805,1780" fill="none" stroke="#398D42" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a398D42)"/>
+<text x="1982.5" y="1762" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#398D42" text-anchor="middle">AgentToolResult / isError</text>
+<path d="M805,1885 L230,1885" fill="none" stroke="#398D42" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a398D42)"/>
+<text x="517.5" y="1867" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#398D42" text-anchor="middle">after hook → ToolResultMessage</text>
+<path d="M80 1980 H1598 L1620 2002 V2085 H80 Z M1598 1980 V2002 H1620" fill="#EFF7FF" stroke="#2886CE" stroke-width="2"/>
+<text x="850.0" y="2028.0" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#2886CE" text-anchor="middle">校验顺序</text>
+<text x="850.0" y="2066.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">正常 Pipeline 路径只在外层按真实 Schema 校验；prepareAgent 不重复做业务参数校验。</text>
+<path d="M1760 1980 H3298 L3320 2002 V2085 H1760 Z M3298 1980 V2002 H3320" fill="#F0F8ED" stroke="#398D42" stroke-width="2"/>
+<text x="2540.0" y="2028.0" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#398D42" text-anchor="middle">权限与执行边界</text>
+<text x="2540.0" y="2066.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">业务问答仅 ALLOW；本地失败不转远端。execute 不自动重放，结果经 Pipeline 回到模型。</text>
+<text x="3320" y="2138" font-family="Times New Roman, Songti SC, serif" font-size="22" fill="#72777D" text-anchor="end">源码核验：553dcd5e · CampusClaw / pi-mono-java</text>
+</svg>

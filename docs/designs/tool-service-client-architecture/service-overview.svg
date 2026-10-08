@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3600" height="2500" viewBox="0 0 3600 2500">
+<title>工具调用总览 · CampusClaw ↔ CampusMate</title>
+<defs>
+<marker id="a2886CE" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#2886CE"/></marker>
+<marker id="aC74738" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#C74738"/></marker>
+<marker id="a398D42" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#398D42"/></marker>
+<marker id="a805AC7" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#805AC7"/></marker>
+<marker id="aA17F72" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#A17F72"/></marker>
+<marker id="a72777D" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#72777D"/></marker>
+<marker id="a302E2A" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="13" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 5 L0 10 Z" fill="#302E2A"/></marker>
+</defs>
+<rect width="3600" height="2500" fill="white"/>
+<text x="1800.0" y="65" font-family="Times New Roman, Songti SC, serif" font-size="42" fill="#302E2A" text-anchor="middle">工具调用总览 · CampusClaw ↔ CampusMate</text>
+<text x="1800.0" y="121" font-family="Times New Roman, Songti SC, serif" font-size="27" fill="#72777D" text-anchor="middle">蓝：Agent 级业务工具　红：Skill 级业务工具　绿：共用执行链　虚线：装配 / 发现 / 工作流</text>
+<rect x="55" y="195" width="2430" height="2130" rx="20" fill="#F7F9FC" stroke="#ABB5C1" stroke-width="2"/>
+<text x="1270.0" y="239" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">CampusClaw · Agent Runtime 服务</text>
+<rect x="2570" y="195" width="975" height="2130" rx="20" fill="#F3F3F3" stroke="#A3A3A3" stroke-width="2"/>
+<text x="3057.5" y="239" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">CampusMate · mate-service</text>
+<rect x="105" y="585" width="1080" height="740" rx="20" fill="#FFFBF3" stroke="#D7A342" stroke-width="2"/>
+<text x="645.0" y="629" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">① Agent 级：Session 创建时装配</text>
+<rect x="1275" y="585" width="1160" height="740" rx="20" fill="#FFFBF3" stroke="#D7A342" stroke-width="2"/>
+<text x="1855.0" y="629" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">② Skill 级：按需读正文 / 取定义 / 调用</text>
+<rect x="105" y="1400" width="2330" height="450" rx="20" fill="#FFFBF3" stroke="#D7A342" stroke-width="2"/>
+<text x="1270.0" y="1444" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">③ Session 共用工具执行与解析层</text>
+<path d="M750,400 L585,400" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a72777D)"/>
+<path d="M885,480 L885,525 L145,525 L145,1130 L220,1130" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a2886CE)"/>
+<text x="430" y="508" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#2886CE" text-anchor="middle">直接调用真实业务工具名</text>
+<path d="M1555,480 L1555,700" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<path d="M1700,480 L1700,550 L2380,550 L2380,660 L2100,660 L2100,700" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<path d="M1420,480 L1420,540 L1295,540 L1295,1140 L1530,1140" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<text x="1980" y="530" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#C74738" text-anchor="middle">按需使用框架工具</text>
+<path d="M650,905 L650,1050" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a2886CE)"/>
+<text x="925" y="986" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#2886CE" text-anchor="middle">动态包装 / 注入</text>
+<path d="M1790,800 L1850,800" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#aC74738)"/>
+<path d="M2100,910 L2100,980 L1930,980 L1930,1050" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#aC74738)"/>
+<path d="M650,1230 L650,1510" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a2886CE)"/>
+<path d="M1750,1230 L1750,1360 L960,1360 L960,1510" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#aC74738)"/>
+<path d="M1090,810 L1225,810 L1225,1375 L1630,1375 L1630,1510" fill="none" stroke="#2886CE" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a2886CE)"/>
+<path d="M2350,810 L2405,810 L2405,1470 L2060,1470 L2060,1510" fill="none" stroke="#C74738" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#aC74738)"/>
+<path d="M1840,1770 L1840,1950 L1680,1950 L1680,2010" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a72777D)"/>
+<path d="M750,1770 L750,1915 L1120,1915 L1120,2010" fill="none" stroke="#398D42" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a398D42)"/>
+<text x="948" y="1888" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#398D42" text-anchor="middle">固定的远端 handler</text>
+<text x="2095" y="1930" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#72777D" text-anchor="middle">发现：不带凭据</text>
+<path d="M2110,2060 L2515,2060 L2515,1580 L2670,1580" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a72777D)"/>
+<path d="M2110,2160 L2670,2160" fill="none" stroke="#398D42" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#a398D42)"/>
+<text x="2380" y="2135" font-family="Times New Roman, Songti SC, serif" font-size="24" fill="#398D42" text-anchor="middle">HTTP execute</text>
+<path d="M1430,1640 L1300,1640" fill="none" stroke="#72777D" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="8 7" marker-end="url(#a72777D)"/>
+<text x="1365" y="1618" font-family="Times New Roman, Songti SC, serif" font-size="24" fill="#72777D" text-anchor="middle">可信定义</text>
+<rect x="110" y="330" width="475" height="150" rx="20" fill="#F1F3F5" stroke="#72777D" stroke-width="2"/>
+<text x="347.5" y="400.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#72777D" text-anchor="middle">本地框架工具</text>
+<text x="347.5" y="438.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Read / Find / Grep / Ls 等</text>
+<rect x="750" y="315" width="1050" height="165" rx="20" fill="#DCEAF9" stroke="#2886CE" stroke-width="2"/>
+<text x="1275.0" y="396.0" font-family="Times New Roman, Songti SC, serif" font-size="35" fill="#2886CE" text-anchor="middle">AgentLoop · 模型 ↔ 工具循环</text>
+<text x="1275.0" y="434.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">初始 tools = 框架工具 + Agent 直接绑定业务代理</text>
+<path d="M220 710 H1068 L1090 732 V905 H220 Z M1068 710 V732 H1090" fill="#FFF3D3" stroke="#2886CE" stroke-width="2"/>
+<text x="655.0" y="784.0" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#2886CE" text-anchor="middle">Session 装配</text>
+<text x="655.0" y="822.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Factory / Assembler → listAgentTools(agentId)</text>
+<text x="655.0" y="860.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">读取可信 Agent 绑定与完整工具元数据</text>
+<path d="M220 1050 H1068 L1090 1072 V1230 H220 Z M1068 1050 V1072 H1090" fill="#EDF6FF" stroke="#2886CE" stroke-width="2"/>
+<text x="655.0" y="1116.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#2886CE" text-anchor="middle">MateToolAdapter × N</text>
+<text x="655.0" y="1154.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">以真实 name / inputSchema 注入初始 tools</text>
+<text x="655.0" y="1192.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">模型直接调用；无需 SearchTools / CallTool</text>
+<path d="M1320 700 H1768 L1790 722 V910 H1320 Z M1768 700 V722 H1790" fill="#FFF3D3" stroke="#C74738" stroke-width="2"/>
+<text x="1555.0" y="781.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#C74738" text-anchor="middle">Skill({name})</text>
+<text x="1555.0" y="819.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">读受管 SKILL.md 正文</text>
+<text x="1555.0" y="857.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">获得业务工具技术名</text>
+<path d="M1850 700 H2328 L2350 722 V910 H1850 Z M2328 700 V722 H2350" fill="#FFF3D3" stroke="#C74738" stroke-width="2"/>
+<text x="2100.0" y="781.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#C74738" text-anchor="middle">SearchTools({tool})</text>
+<text x="2100.0" y="819.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">精确取单个工具完整定义</text>
+<text x="2100.0" y="857.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">不追加到初始 tools</text>
+<path d="M1530 1050 H2328 L2350 1072 V1230 H1530 Z M2328 1050 V1072 H2350" fill="#FFF1ED" stroke="#C74738" stroke-width="2"/>
+<text x="1940.0" y="1116.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#C74738" text-anchor="middle">CallTool({tool, args})</text>
+<text x="1940.0" y="1154.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">按工具技术名与业务参数调用</text>
+<text x="1940.0" y="1192.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">框架从可信 Skill 绑定解析真实 toolId</text>
+<path d="M230 1510 H1278 L1300 1532 V1770 H230 Z M1278 1510 V1532 H1300" fill="#F0F8ED" stroke="#398D42" stroke-width="2"/>
+<text x="765.0" y="1597.5" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#398D42" text-anchor="middle">ToolExecutionPipeline + MateToolExecutor</text>
+<text x="765.0" y="1635.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">真实业务 Schema 校验 → prepare 固定 handler / 快照</text>
+<text x="765.0" y="1673.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Host 权限 → 执行同一份 PreparedToolInvocation</text>
+<text x="765.0" y="1711.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">远端走 MateRemoteToolHandler；结果经 Pipeline 回模型</text>
+<path d="M1430 1510 H2238 L2260 1532 V1770 H1430 Z M2238 1510 V1532 H2260" fill="#FFF3D3" stroke="#302E2A" stroke-width="2"/>
+<text x="1845.0" y="1598.0" font-family="Times New Roman, Songti SC, serif" font-size="30" fill="#302E2A" text-anchor="middle">MateToolResolver</text>
+<text x="1845.0" y="1636.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Agent 绑定 / Skill 绑定 → 可信工具定义</text>
+<text x="1845.0" y="1674.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">缓存与 Executor 均为 Session 私有</text>
+<text x="1845.0" y="1712.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">CallTool.prepareSkill 同样使用 Resolver</text>
+<rect x="650" y="2010" width="1460" height="240" rx="20" fill="#EAF2FA" stroke="#2886CE" stroke-width="2"/>
+<text x="1380.0" y="2089.0" font-family="Times New Roman, Songti SC, serif" font-size="32" fill="#2886CE" text-anchor="middle">MateToolClient → HttpMateToolClient</text>
+<text x="1380.0" y="2127.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">listAgentTools(agentId) / listSkillTools(skillId)：查询绑定及元数据</text>
+<text x="1380.0" y="2165.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">callTool(toolId, args, credentials)：携带执行凭据</text>
+<text x="1380.0" y="2203.0" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">跨 Session 共享无状态 HTTP 客户端</text>
+<path d="M2670 384 A387.5 19 0 0 1 3445 384 V621 A387.5 19 0 0 1 2670 621 Z" fill="#EEEEEE" stroke="#302E2A" stroke-width="2"/><ellipse cx="3057.5" cy="384" rx="387.5" ry="19" fill="#EEEEEE" stroke="#302E2A" stroke-width="2"/>
+<text x="3057.5" y="473.5" font-family="Times New Roman, Songti SC, serif" font-size="32" fill="#302E2A" text-anchor="middle">绑定关系管理</text>
+<text x="3057.5" y="511.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Agent → bindingTools</text>
+<text x="3057.5" y="549.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Skill → bindingTools</text>
+<text x="3057.5" y="587.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">工具元数据：name / description / inputSchema</text>
+<path d="M2670 1359 A387.5 19 0 0 1 3445 1359 V1621 A387.5 19 0 0 1 2670 1621 Z" fill="#EEEEEE" stroke="#302E2A" stroke-width="2"/><ellipse cx="3057.5" cy="1359" rx="387.5" ry="19" fill="#EEEEEE" stroke="#302E2A" stroke-width="2"/>
+<text x="3057.5" y="1441.5" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">工具发现 API</text>
+<text x="3057.5" y="1479.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">GET /agents/{agentId}</text>
+<text x="3057.5" y="1517.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">GET /skill/query/{skillId}</text>
+<text x="3057.5" y="1555.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">POST /runtime/tools/query</text>
+<text x="3057.5" y="1593.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">先查绑定 toolId，再批量取完整定义</text>
+<path d="M2670 2029 A387.5 19 0 0 1 3445 2029 V2231 A387.5 19 0 0 1 2670 2231 Z" fill="#EAF4E7" stroke="#398D42" stroke-width="2"/><ellipse cx="3057.5" cy="2029" rx="387.5" ry="19" fill="#EAF4E7" stroke="#398D42" stroke-width="2"/>
+<text x="3057.5" y="2100.5" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#398D42" text-anchor="middle">业务工具执行 API</text>
+<text x="3057.5" y="2138.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">POST /runtime/tools/{toolId}/execute</text>
+<text x="3057.5" y="2176.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">body = {arguments: ...}</text>
+<text x="3057.5" y="2214.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">Mate 校验凭据并执行对应业务能力</text>
+<path d="M2655 795 H3438 L3460 817 V1105 H2655 Z M3438 795 V817 H3460" fill="#FFF3D3" stroke="#302E2A" stroke-width="2"/>
+<text x="3057.5" y="889.5" font-family="Times New Roman, Songti SC, serif" font-size="31" fill="#302E2A" text-anchor="middle">服务职责</text>
+<text x="3057.5" y="927.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">CampusClaw：模型循环 / 工具注册 / Skill 读取</text>
+<text x="3057.5" y="965.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">可信解析 / 参数校验 / Host 权限 / 调用</text>
+<text x="3057.5" y="1003.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">CampusMate：绑定与定义 / 业务执行</text>
+<text x="3057.5" y="1041.5" font-family="Times New Roman, Songti SC, serif" font-size="25" fill="#302E2A" text-anchor="middle">业务 HTTP 路径统一前缀：/mate-service/v1</text>
+<text x="1800" y="2390" font-family="Times New Roman, Songti SC, serif" font-size="29" fill="#805AC7" text-anchor="middle">本地例外：confirm_with_user → BusinessConfirmationAdapter → Runtime 问答，失败不转远端。</text>
+<text x="1800" y="2440" font-family="Times New Roman, Songti SC, serif" font-size="26" fill="#72777D" text-anchor="middle">沿用早期 ListMateTool / CallMateTool 草图的服务分层；节点名称与调用方式按 553dcd5e 当前实现绘制。</text>
+<text x="3520" y="2468" font-family="Times New Roman, Songti SC, serif" font-size="22" fill="#72777D" text-anchor="end">源码核验：553dcd5e · CampusClaw / pi-mono-java</text>
+</svg>
