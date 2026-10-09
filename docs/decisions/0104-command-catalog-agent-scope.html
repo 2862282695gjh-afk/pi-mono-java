@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0104：命令清单接口按 Agent 寻址</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0104：命令清单接口按 Agent 寻址</h1>
+<p>状态：Proposed。日期：2026-10-09。</p>
+<h2>Context</h2>
+<p>命令清单接口 <code>GET /sessions/{sessionId}/commands</code> 以会话寻址，而公司前端在首次对话时才创建会话：用户打开页面到发出第一条消息之间不存在 sessionId，<code>/</code> 命令面板无法加载清单。清单内容实际只由 agentId 决定——Builtin 命令是固定集合，Skill 命令来自 agent 绑定；会话仅贡献运行态可用性标志（SESSION_BUSY 等），而现网前端未消费这些标志，运行中的输入锁定由前端 composer 自身状态完成。源码基线为 <code>553dcd5e</code>（runtimeapi 命令体系）。</p>
+<h2>Options</h2>
+<ul>
+<li>保留会话接口并新增 agent 接口（并存）：无迁移风险，但两个寻址维度返回两套清单语义，前端需要处理"何时用哪个"的分支，而会话维度的可用性标志没有任何消费方，属于无价值的第二真相。</li>
+<li>前端预创建会话后再拉清单：零后端改动，但用户不说话会留下空会话垃圾（依赖 unload 删除或后端 TTL 兜底），且要求公司前端改变"首次对话才建会话"的既有流程——接入成本落在对方，问题只是被绕开而非修正。</li>
+<li>前端静态内置 Builtin 清单、会话后补 Skill 清单：零后端改动，但 Skill 命令恰是首屏最需要的内容，缺席在关键时刻，且产生两份清单真相。</li>
+<li>（选择）清单接口整体替换为 agent 寻址：语义与真实数据依赖对齐，消费方仅两个前端，直接替换无兼容负担。</li>
+</ul>
+<h2>Decision</h2>
+<ul>
+<li>删除 <code>GET /sessions/{sessionId}/commands</code>，新增 <code>GET /agents/{agentId}/commands</code>，与 <code>POST /agents/{agentId}/sessions</code> 同层级；响应体保持同构。</li>
+<li>Agent 模式语义固定为"该 agent 空会话的清单"：纯查询、无副作用、不隐式建会话；agent 不存在或 prepare 失败返回 <code>AGENT_NOT_AVAILABLE</code>。</li>
+<li>可用性静态化：清单不再反映运行态；响应组装器继续过滤不可用命令（如空历史下的 compact）。运行态拦截由 <code>POST /sessions/{id}/command</code> 服务端完整兜底，执行契约不变。</li>
+<li>清单不读取任何凭据，保持"发现请求不携带凭据"分层；调用方准入由公司网关（access-token）保证，Runtime 维持内网信任模型。网关必须按用户过滤可见 agent，否则 Skill 能力面可被枚举——该信任假设写入契约。</li>
+<li>直接替换，不设并存过渡期：消费方仅 campusclaw 前端与公司前端，二者随实现 PR 同步迁移。</li>
+</ul>
+<h2>Consequences</h2>
+<p>首屏命令面板不再依赖会话存在，接入缺口消除；清单语义与数据依赖一致，URL 层级自洽。代价：清单失去运行态可用性标志（当前无消费方，如未来需要可由会话级接口演进恢复）；agent 准入责任明确移交公司网关，网关侧需确认认证之外的授权过滤。设计仓 <code>12-list-session-commands</code> 契约需在方案通过后同步更新。</p>
+<h2>Validation</h2>
+<p>本决策随设计提案 PR 提交，尚未实现。实现 PR 需覆盖：agent 模式清单解析与 <code>AGENT_NOT_AVAILABLE</code> 服务层单测、Controller 路径校验与响应信封测试、<code>POST /command</code> 两命名空间执行链路回归，并通过 <code>spotless:check checkstyle:check</code>。</p>
+<p><a href="../designs/command-catalog-agent-scope.md">设计文档</a> · 关联 <a href="0103-composer-command-and-header-interaction.html">ADR-0103</a>（命令 Composer 交互）</p>
+</main>
+</html>
